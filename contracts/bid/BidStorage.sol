@@ -5,7 +5,9 @@ pragma solidity ^0.4.24;
  * @title Interface for contracts conforming to ERC-20
  */
 contract ERC20Interface {
-    function transferFrom(address from, address to, uint tokens) public returns (bool success);
+    function balanceOf(address from) public view returns (uint256);
+    function transferFrom(address from, address to, uint tokens) public returns (bool);
+    function allowance(address owner, address spender) public view returns (uint256);
 }
 
 
@@ -13,7 +15,7 @@ contract ERC20Interface {
  * @title Interface for contracts conforming to ERC-721
  */
 contract ERC721Interface {
-    // function ownerOf(uint256 _tokenId) public view returns (address _owner);
+    function ownerOf(uint256 _tokenId) public view returns (address _owner);
     // function approve(address _to, uint256 _tokenId) public;
     // function getApproved(uint256 _tokenId) public view returns (address);
     // function isApprovedForAll(address _owner, address _operator) public view returns (bool);
@@ -31,9 +33,7 @@ contract BidStorage {
     bytes4 public constant ERC721_Interface = 0x80ac58cd;
     bytes4 public constant ERC721_Received = 0x150b7a02;
     bytes4 public constant ERC721Composable_ValidateFingerprint = 0x8f9f4b63;
-    ERC20Interface public constant manaToken = 
-    ERC20Interface(0x0F5D2fB29fb7d3CFeE444a200298f468908cC942);
-
+    
     struct Bid {
         // Bid Id
         bytes32 id;
@@ -48,45 +48,52 @@ contract BidStorage {
         // Time when this bid ends 
         uint256 expiresAt;
         // Fingerprint for composable
-        bytes fingerPrint;
+        bytes fingerprint;
     }
 
-    // Bid by token address => token id => bid index
-    mapping(address => mapping(uint256 => Bid[])) public bidsByToken;
-    // Index of the bid of the bidsByToken mapping
+    // MANA token
+    ERC20Interface public manaToken;
+
+    // Bid id by token address => token id => bid index => bid
+    mapping(address => mapping(uint256 => mapping(uint256 => Bid))) internal bidsByToken;
+    // Bid id by token address => token id => bid counts
+    mapping(address => mapping(uint256 => uint256)) public bidCounterByToken;
+    // Index of the bid at bidsByToken mapping
     mapping(bytes32 => uint256) public bidIndexByBidId;
-    // Bid id by token address => token id => bidder address
-    mapping(address => mapping(uint256 => mapping(address => bytes32))) public bidIdByBidder;
+    // Bid id by token address => token id => bidder address => bidId
+    mapping(address => mapping(uint256 => mapping(address => bytes32))) public bidByTokenAndBidder;
+
 
     uint256 public ownerCutPerMillion;
     uint256 public publicationFeePerMillion;
 
     // EVENTS
     event BidCreated(
-      bytes32 id,
-      address tokenAddress,
-      uint256 indexed tokenId,
-      address indexed bidder,
-      uint256 priceInWei,
-      uint256 expiresAt
+      bytes32 _id,
+      address indexed _tokenAddress,
+      uint256 indexed _tokenId,
+      address indexed _bidder,
+      uint256 _price,
+      uint256 _expiresAt,
+      bytes _fingerprint
     );
     
     event BidAccepted(
-      bytes32 id,
-      uint256 indexed tokenId,
-      address indexed bidder,
-      address tokenAddress,
-      uint256 totalPrice,
-      address indexed buyer
+      bytes32 _id,
+      address indexed _tokenAddress,
+      uint256 indexed _tokenId,
+      address _bidder,
+      address indexed _buyer,
+      uint256 _totalPrice
     );
 
     event BidCancelled(
-      bytes32 id,
-      uint256 indexed tokenId,
-      address indexed bidder,
-      address tokenAddress
+      bytes32 _id,
+      address indexed _tokenAddress,
+      uint256 indexed _tokenId,
+      address indexed _bidder
     );
 
-    event ChangedPublicationFee(uint256 publicationFeePerMillion);
-    event ChangedOwnerCutPerMillion(uint256 ownerCutPerMillion);
+    event ChangedPublicationFee(uint256 _publicationFeePerMillion);
+    event ChangedOwnerCutPerMillion(uint256 _ownerCutPerMillion);
 }
