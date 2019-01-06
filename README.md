@@ -15,6 +15,7 @@ Bid contract for ERC721 tokens
 - Fees, if present, are going to be payed by the bidder
 - The bid will remain invalid if:
   - Expired.
+  - A bid for the same token is accepted.
   - Fingerprint changed (Only Composable tokens).
 - If the token has an active publication in the Decentraland Marketplace when a bid is accepted, the order will become invalid because the owner changed.
 

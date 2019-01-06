@@ -1,4 +1,4 @@
-import { assertRevert } from 'openzeppelin-eth/test/helpers/assertRevert'
+import assertRevert from './helpers/assertRevert'
 import { increaseTime, duration } from './helpers/increaseTime'
 
 const BigNumber = web3.BigNumber
@@ -26,10 +26,6 @@ function assertEvent(log, expectedEventName, expectedArgs) {
       value.should.be.equal(expectedArgs[key], `[assertEvent] ${key}`)
     }
   }
-}
-
-function getBlock(blockNumber = 'latest') {
-  return web3.eth.getBlock(blockNumber)
 }
 
 async function getEvents(contract, eventName) {
@@ -69,6 +65,8 @@ contract('Bid', function([
   const unownedToken = '100'
   const price = web3.toWei(100, 'ether').toString()
   const initialBalance = web3.toWei(10000, 'ether')
+  const twoWeeksInSeconds = duration.weeks(2)
+  const sixMonthInSeconds = duration.weeks(24)
 
   const creationParams = {
     ...fromOwner,
@@ -83,10 +81,15 @@ contract('Bid', function([
     expectedCounter,
     expetectedIndex
   ) {
-    const blockTime = (await getBlock()).timestamp
-    await bidContract.placeBid(token.address, tokenId, price, blockTime, {
-      from: bidder
-    })
+    await bidContract.placeBid(
+      token.address,
+      tokenId,
+      price,
+      twoWeeksInSeconds,
+      {
+        from: bidder
+      }
+    )
     let bidCounter = await bidContract.bidCounterByToken(token.address, tokenId)
     bidCounter.should.be.bignumber.equal(expectedCounter)
     let bidData = await bidContract.getBidByToken(
@@ -128,29 +131,28 @@ contract('Bid', function([
     tokenWithoutInterface = await TokenWithoutInterface.new(creationParams)
     bidContract = await BidContract.new(mana.address, creationParams)
 
-    mana.mint(initialBalance, bidder)
-    mana.mint(initialBalance, anotherBidder)
-    mana.mint(initialBalance, oneMoreBidder)
+    await mana.mint(initialBalance, bidder)
+    await mana.mint(initialBalance, anotherBidder)
+    await mana.mint(initialBalance, oneMoreBidder)
 
-    token.mint(holder, tokenOne)
-    token.mint(holder, tokenTwo)
+    await token.mint(holder, tokenOne)
+    await token.mint(holder, tokenTwo)
 
-    composableToken.mint(holder, tokenOne)
-    composableToken.mint(holder, tokenTwo)
+    await composableToken.mint(holder, tokenOne)
+    await composableToken.mint(holder, tokenTwo)
 
-    mana.approve(bidContract.address, initialBalance, fromBidder)
-    mana.approve(bidContract.address, initialBalance, fromAnotherBidder)
-    mana.approve(bidContract.address, initialBalance, fromOneMoreBidder)
+    await mana.approve(bidContract.address, initialBalance, fromBidder)
+    await mana.approve(bidContract.address, initialBalance, fromAnotherBidder)
+    await mana.approve(bidContract.address, initialBalance, fromOneMoreBidder)
   })
 
   describe('Place bids', function() {
     it('should bid an erc721 token', async function() {
-      const blockTime = (await getBlock()).timestamp
       const { logs } = await bidContract.placeBid(
         token.address,
         tokenOne,
         price,
-        blockTime,
+        twoWeeksInSeconds,
         fromBidder
       )
 
@@ -177,13 +179,12 @@ contract('Bid', function([
     })
 
     it('should bid a composable erc721 token', async function() {
-      const blockTime = (await getBlock()).timestamp
       const fingerprint = await composableToken.getFingerprint(tokenOne)
       const { logs } = await bidContract.placeBidWithFingerprint(
         composableToken.address,
         tokenOne,
         price,
-        blockTime,
+        twoWeeksInSeconds,
         fingerprint,
         fromBidder
       )
@@ -234,27 +235,25 @@ contract('Bid', function([
     })
 
     it('should bid an erc721 token with fingerprint', async function() {
-      const blockTime = (await getBlock()).timestamp
       const fingerprint = await composableToken.getFingerprint(tokenOne)
       await bidContract.placeBidWithFingerprint(
         token.address,
         tokenOne,
         price,
-        blockTime,
+        twoWeeksInSeconds,
         fingerprint,
         fromBidder
       )
     })
 
     it('reverts when bidding a composable erc721 token with changed fingerprint', async function() {
-      const blockTime = (await getBlock()).timestamp
       const fingerprint = await composableToken.getFingerprint(tokenTwo)
       await assertRevert(
         bidContract.placeBidWithFingerprint(
           composableToken.address,
           tokenOne,
           price,
-          blockTime,
+          twoWeeksInSeconds,
           fingerprint,
           fromBidder
         ),
@@ -263,13 +262,12 @@ contract('Bid', function([
     })
 
     it('reverts when bidding an erc721 token with different interface', async function() {
-      const blockTime = (await getBlock()).timestamp
       await assertRevert(
         bidContract.placeBid(
           tokenWithoutInterface.address,
           tokenOne,
           price,
-          blockTime,
+          twoWeeksInSeconds,
           fromBidder
         ),
         'Token has an invalid ERC721 implementation'
@@ -277,21 +275,25 @@ contract('Bid', function([
     })
 
     it('reverts when bidding an address', async function() {
-      const blockTime = (await getBlock()).timestamp
       await assertRevert(
-        bidContract.placeBid(bidder, tokenOne, price, blockTime, fromBidder),
+        bidContract.placeBid(
+          bidder,
+          tokenOne,
+          price,
+          twoWeeksInSeconds,
+          fromBidder
+        ),
         'Token should be a contract'
       )
     })
 
     it('reverts when bidder has not funds', async function() {
-      const blockTime = (await getBlock()).timestamp
       await assertRevert(
         bidContract.placeBid(
           token.address,
           tokenOne,
           price,
-          blockTime,
+          twoWeeksInSeconds,
           fromBidderWithoutFunds
         ),
         'Insufficient funds'
@@ -299,23 +301,28 @@ contract('Bid', function([
     })
 
     it('reverts when bidder did not authorize bid contract on his behalf', async function() {
-      const blockTime = (await getBlock()).timestamp
+      await mana.approve(bidContract.address, 0, fromBidder)
       await assertRevert(
         bidContract.placeBid(
           token.address,
           tokenOne,
           price,
-          blockTime,
-          fromHolder
+          twoWeeksInSeconds,
+          fromBidder
         ),
         'The contract is not authorized to use MANA on bidder behalf'
       )
     })
 
     it('reverts when bid with 0', async function() {
-      const blockTime = (await getBlock()).timestamp
       await assertRevert(
-        bidContract.placeBid(token.address, tokenOne, 0, blockTime, fromBidder),
+        bidContract.placeBid(
+          token.address,
+          tokenOne,
+          0,
+          twoWeeksInSeconds,
+          fromBidder
+        ),
         'Price should be bigger than 0'
       )
     })
@@ -330,33 +337,43 @@ contract('Bid', function([
           oneMinuteInSeconds,
           fromBidder
         ),
-        'Bid should be more than 1 minute in the future'
+        'The bid should be more than 1 minute in the future'
+      )
+    })
+
+    it('reverts when bid expires in more than 6 months', async function() {
+      await assertRevert(
+        bidContract.placeBid(
+          token.address,
+          tokenOne,
+          price,
+          sixMonthInSeconds,
+          fromBidder
+        ),
+        'The bid longs 6 months at the most'
       )
     })
 
     it('reverts when bid an unowned token', async function() {
-      const blockTime = (await getBlock()).timestamp
       await assertRevert(
         bidContract.placeBid(
           token.address,
           unownedToken,
           price,
-          blockTime,
+          twoWeeksInSeconds,
           fromBidder
-        ),
-        'Token should have an owner'
+        )
       )
     })
   })
 
   describe('Cancel Bids', function() {
     beforeEach(async function() {
-      const blockTime = (await getBlock()).timestamp
       await bidContract.placeBid(
         token.address,
         tokenOne,
         price,
-        blockTime,
+        twoWeeksInSeconds,
         fromBidder
       )
     })
@@ -433,12 +450,11 @@ contract('Bid', function([
 
   describe('Accept Bids', function() {
     beforeEach(async function() {
-      const blockTime = (await getBlock()).timestamp
       await bidContract.placeBid(
         token.address,
         tokenOne,
         price,
-        blockTime,
+        twoWeeksInSeconds,
         fromBidder
       )
 
@@ -447,7 +463,7 @@ contract('Bid', function([
         composableToken.address,
         tokenOne,
         price,
-        blockTime,
+        twoWeeksInSeconds,
         fingerprint,
         fromBidder
       )
@@ -627,6 +643,25 @@ contract('Bid', function([
         0
       )
 
+      await assertRevert(
+        token.safeTransferFromWithBytes(
+          holder,
+          bidContract.address,
+          tokenOne,
+          bidId,
+          fromHolder
+        )
+      )
+    })
+
+    it('reverts when accepting an expired bid', async function() {
+      await increaseTime(twoWeeksInSeconds + duration.minutes(1))
+
+      const [bidId] = await bidContract.getBidByToken(
+        token.address,
+        tokenOne,
+        0
+      )
       await assertRevert(
         token.safeTransferFromWithBytes(
           holder,

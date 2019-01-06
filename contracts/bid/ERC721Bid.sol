@@ -75,8 +75,13 @@ contract ERC721Bid is Ownable, BidStorage {
 
         uint256 expiresAt = block.timestamp.add(_expiresIn);
         require(
-            expiresAt > block.timestamp.add(1 minutes), 
-            "Bid should be more than 1 minute in the future"
+            expiresAt > block.timestamp.add(MIN_BID_DURATION), 
+            "The bid should be more than 1 minute in the future"
+        );
+
+        require(
+            expiresAt < block.timestamp.add(MAX_BID_DURATION), 
+            "The bid longs 6 months at the most"
         );
 
         ERC721Interface token = ERC721Interface(_tokenAddress);
@@ -199,8 +204,7 @@ contract ERC721Bid is Ownable, BidStorage {
         require(
             // solium-disable-next-line operator-whitespace
             bid.id == bidId &&
-            bid.tokenAddress == msg.sender && 
-            bid.tokenId == _tokenId, 
+            bid.expiresAt >= block.timestamp, 
             "Invalid bid"
         );
 
@@ -219,6 +223,7 @@ contract ERC721Bid is Ownable, BidStorage {
         
         ERC721Interface(msg.sender).transferFrom(address(this), bidder, _tokenId);
         
+        //@TODO: move this duplicated to create bid to a function
         require(
             manaToken.balanceOf(bidder) >= price,
             "Insufficient funds"
@@ -229,7 +234,6 @@ contract ERC721Bid is Ownable, BidStorage {
         );
        
        
-        // emit BidAccepted event
         emit BidAccepted(
             bidId,
             msg.sender,
