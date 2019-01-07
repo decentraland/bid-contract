@@ -6,11 +6,13 @@ import "openzeppelin-solidity/contracts/token/ERC721/ERC721.sol";
 contract ComposableToken is ERC721 {
     bytes4 public constant ERC721Composable_ValidateFingerprint = 0x8f9f4b63;
     bytes4 public constant ERC721_Interface = 0x80ac58cd;
+    mapping(uint256 => bytes32) public fingerprints;
 
     constructor() ERC721() public {}
 
     function mint(address _to, uint256 _id) external {
-        return super._mint(_to, _id);
+        super._mint(_to, _id);
+        setFingerprint(_id, _id);
     }
 
     function verifyFingerprint(
@@ -18,14 +20,18 @@ contract ComposableToken is ERC721 {
         bytes memory _fingerprint
     )
         public
-        pure
+        view
         returns (bool)
     {
         return getFingerprint(_tokenId) == _bytesToBytes32(_fingerprint);
     }
 
-    function getFingerprint(uint256 _tokenId) public pure returns (bytes32) {
-        return bytes32(_tokenId);
+    function getFingerprint(uint256 _tokenId) public view returns (bytes32) {
+        return fingerprints[_tokenId];
+    }
+
+    function setFingerprint(uint256 _tokenId, uint256 _value) public {
+        fingerprints[_tokenId] = bytes32(_value);
     }
 
     function _bytesToBytes32(bytes memory _data) internal pure returns (bytes32) {

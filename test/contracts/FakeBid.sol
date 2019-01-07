@@ -5,7 +5,7 @@ import "../../contracts/bid/ERC721Bid.sol";
 
 contract FakeBid is ERC721Bid {
     
-    constructor(address _manaToken) public ERC721Bid(_manaToken) {}
+    constructor(address _manaToken, address _owner) public ERC721Bid(_manaToken, _owner) {}
 
     function placeBidWithFingerprint(
         address _tokenAddress, 

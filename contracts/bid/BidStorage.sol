@@ -67,7 +67,6 @@ contract BidStorage {
 
 
     uint256 public ownerCutPerMillion;
-    uint256 public publicationFeePerMillion;
 
     // EVENTS
     event BidCreated(
@@ -96,6 +95,5 @@ contract BidStorage {
       address indexed _bidder
     );
 
-    event ChangedPublicationFee(uint256 _publicationFeePerMillion);
     event ChangedOwnerCutPerMillion(uint256 _ownerCutPerMillion);
 }

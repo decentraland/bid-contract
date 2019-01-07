@@ -129,7 +129,7 @@ contract('Bid', function([
     token = await Token.new(creationParams)
     composableToken = await ComposableToken.new(creationParams)
     tokenWithoutInterface = await TokenWithoutInterface.new(creationParams)
-    bidContract = await BidContract.new(mana.address, creationParams)
+    bidContract = await BidContract.new(mana.address, owner, creationParams)
 
     await mana.mint(initialBalance, bidder)
     await mana.mint(initialBalance, anotherBidder)
@@ -559,6 +559,149 @@ contract('Bid', function([
       ownerOfTokenOne.should.be.equal(bidder)
     })
 
+    it('should accept a bid and invalidate the others for the same token', async function() {
+      await placeMultipleBidsAndCheck(
+        tokenOne,
+        [bidder, anotherBidder, oneMoreBidder],
+        [1, 2, 3],
+        [0, 1, 2]
+      )
+
+      const [firstBidId] = await bidContract.getBidByToken(
+        token.address,
+        tokenOne,
+        0
+      )
+
+      const [secondBidId] = await bidContract.getBidByToken(
+        token.address,
+        tokenOne,
+        1
+      )
+
+      await token.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenOne,
+        secondBidId,
+        fromHolder
+      )
+
+      let bidCounter = await bidContract.bidCounterByToken(
+        token.address,
+        tokenOne
+      )
+      bidCounter.should.be.bignumber.equal(0)
+
+      let tokenOwner = await token.ownerOf(tokenOne)
+      tokenOwner.should.be.equal(anotherBidder)
+
+      // Return land to holder
+      await token.safeTransferFrom(
+        anotherBidder,
+        holder,
+        tokenOne,
+        fromAnotherBidder
+      )
+
+      tokenOwner = await token.ownerOf(tokenOne)
+      tokenOwner.should.be.equal(holder)
+
+      await assertRevert(
+        token.safeTransferFromWithBytes(
+          holder,
+          bidContract.address,
+          tokenOne,
+          firstBidId,
+          fromHolder
+        )
+      )
+    })
+
+    it('should simulate an end-2-end', async function() {
+      // Create bids for tokenOne
+      await placeMultipleBidsAndCheck(
+        tokenOne,
+        [bidder, anotherBidder, oneMoreBidder],
+        [1, 2, 3],
+        [0, 1, 2]
+      )
+
+      let [firstBidId] = await bidContract.getBidByToken(
+        token.address,
+        tokenOne,
+        0
+      )
+
+      let [bidId] = await bidContract.getBidByToken(token.address, tokenOne, 1)
+
+      // Accept bid for tokenOne
+      await token.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenOne,
+        bidId,
+        fromHolder
+      )
+
+      // Return land to holder
+      await token.safeTransferFrom(
+        anotherBidder,
+        holder,
+        tokenOne,
+        fromAnotherBidder
+      )
+
+      // Check that remaining bids for tokenOne are invalid
+      let bidCounter = await bidContract.bidCounterByToken(
+        token.address,
+        tokenOne
+      )
+      bidCounter.should.be.bignumber.equal(0)
+
+      await assertRevert(
+        bidContract.getBidByToken(token.address, tokenOne, 0),
+        'Invalid index'
+      )
+      await assertRevert(
+        bidContract.getBidByToken(token.address, tokenOne, 1),
+        'Invalid index'
+      )
+      await assertRevert(
+        bidContract.getBidByToken(token.address, tokenOne, 2),
+        'Invalid index'
+      )
+
+      await assertRevert(
+        token.safeTransferFromWithBytes(
+          holder,
+          bidContract.address,
+          tokenOne,
+          firstBidId,
+          fromHolder
+        )
+      )
+
+      // Bid for the tokenOne again
+      await placeAndCheckBid(tokenOne, oneMoreBidder, price, 1, 0)
+
+      bidId = (await bidContract.getBidByToken(token.address, tokenOne, 0))[0]
+      // Ids should be different
+      bidId.should.be.not.equal(firstBidId)
+
+      await token.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenOne,
+        bidId,
+        fromHolder
+      )
+
+      // Check that remaining bids for tokenOne are invalid
+      bidCounter = await bidContract.bidCounterByToken(token.address, tokenOne)
+      bidCounter.should.be.bignumber.equal(0)
+    })
+
     it('reverts when accepting invalid tokenId', async function() {
       const [bidId] = await bidContract.getBidByToken(
         token.address,
@@ -673,17 +816,20 @@ contract('Bid', function([
       )
     })
 
-    it.skip('reverts when accepting with fingerprint changed', async function() {
+    it('reverts when accepting with fingerprint changed', async function() {
       const [bidId] = await bidContract.getBidByToken(
-        token.address,
+        composableToken.address,
         tokenOne,
         0
       )
+
+      await composableToken.setFingerprint(tokenOne, 2)
+
       await assertRevert(
-        token.safeTransferFromWithBytes(
+        composableToken.safeTransferFromWithBytes(
           holder,
           bidContract.address,
-          tokenTwo,
+          tokenOne,
           bidId,
           fromHolder
         )

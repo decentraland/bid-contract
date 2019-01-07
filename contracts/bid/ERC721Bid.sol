@@ -1,20 +1,23 @@
 pragma solidity ^0.4.24;
 
 import "openzeppelin-solidity/contracts/ownership/Ownable.sol";
+import "openzeppelin-solidity/contracts/lifecycle/Pausable.sol";
 import "openzeppelin-solidity/contracts/math/SafeMath.sol";
 import "openzeppelin-solidity/contracts/utils/Address.sol";
 import "./BidStorage.sol";
 
 
-contract ERC721Bid is Ownable, BidStorage {
+contract ERC721Bid is Ownable, Pausable, BidStorage {
     using SafeMath for uint256;
     using Address for address;
 
     /**
     * @dev Constructor of the contract.
     */
-    constructor(address _manaToken) Ownable() public {
+    constructor(address _manaToken, address _owner) Ownable() Pausable() public {
         manaToken = ERC20Interface(_manaToken);
+        // Set owner
+        transferOwnership(_owner);
     }
 
     function placeBid(
@@ -61,17 +64,13 @@ contract ERC721Bid is Ownable, BidStorage {
         bytes memory _fingerprint
     )
         private
+        whenNotPaused()
     {
         _requireERC721(_tokenAddress);
+
         require(_price > 0, "Price should be bigger than 0");
-        require(
-            manaToken.balanceOf(msg.sender) >= _price,
-            "Insufficient funds"
-        );
-        require(
-            manaToken.allowance(msg.sender, address(this)) >= _price,
-            "The contract is not authorized to use MANA on bidder behalf"
-        );
+
+        _requireBidderBalance(msg.sender, _price);       
 
         uint256 expiresAt = block.timestamp.add(_expiresIn);
         require(
@@ -192,13 +191,14 @@ contract ERC721Bid is Ownable, BidStorage {
         bytes memory _data
     )
         public
+        whenNotPaused()
         returns (bytes4)
     {
         bytes32 bidId = _bytesToBytes32(_data);
         uint256 bidIndex = bidIndexByBidId[bidId];
 
         // Sender is the token contract
-        Bid storage bid = bidsByToken[msg.sender][_tokenId][bidIndex];
+        Bid memory bid = _getBid(msg.sender, _tokenId, bidIndex);
 
         // Check if the bid is valid.
         require(
@@ -211,28 +211,40 @@ contract ERC721Bid is Ownable, BidStorage {
         address bidder = bid.bidder;
         uint256 price = bid.price;
         
-        // Check ingerprint if apply
+        // Check fingerprint if apply
         _requireComposableERC721(msg.sender, _tokenId, bid.fingerprint);
 
-         // Delete bid references from contract storage
+        // Calculate share amount
+        uint256 saleShareAmount = 0;
+        if (ownerCutPerMillion > 0) {
+            // Calculate sale share
+            saleShareAmount = price.mul(ownerCutPerMillion).div(1000000);
+        }
+        // Check if bidder has funds
+        _requireBidderBalance(bidder, price.add(saleShareAmount));
+
+        // Delete bid references from contract storage
         delete bidIndexByBidId[bidId];
         delete bidByTokenAndBidder[msg.sender][_tokenId][bidder];
 
         // Reset bid counter (used to invalidate other bids placed for the token)
         delete bidCounterByToken[msg.sender][_tokenId];
         
+        // Transfer token to bidder
         ERC721Interface(msg.sender).transferFrom(address(this), bidder, _tokenId);
-        
-        //@TODO: move this duplicated to create bid to a function
-        require(
-            manaToken.balanceOf(bidder) >= price,
-            "Insufficient funds"
-        );
+
+        if (ownerCutPerMillion > 0) {
+            // Transfer share amount for bid conctract Owner
+            require(
+                manaToken.transferFrom(bidder, owner(), saleShareAmount),
+                "Transfering the cut to the bid contract owner failed"
+            );
+        }
+        // Transfer MANA from bidder to token owner
         require(
             manaToken.transferFrom(bidder, _from, price),
             "Transfer MANA to owner failed"
         );
-       
        
         emit BidAccepted(
             bidId,
@@ -246,7 +258,7 @@ contract ERC721Bid is Ownable, BidStorage {
         return ERC721_Received;
     }
 
-    function cancelBid(address _tokenAddress, uint256 _tokenId) public {
+    function cancelBid(address _tokenAddress, uint256 _tokenId) public whenNotPaused() {
         // Get active bid
         (bytes32 bidId, uint256 bidIndex) = getActiveBidIdAndIndex(
             _tokenAddress, 
@@ -288,14 +300,35 @@ contract ERC721Bid is Ownable, BidStorage {
         view
         returns (bytes32, address, uint256, uint256) 
     {
-        require(_index < bidCounterByToken[_tokenAddress][_tokenId], "Invalid index");
-        Bid memory bid = bidsByToken[_tokenAddress][_tokenId][_index];
+        
+        Bid memory bid = _getBid(_tokenAddress, _tokenId, _index);
         return (
             bid.id,
             bid.bidder,
             bid.price,
             bid.expiresAt
         );
+    }
+
+    function _getBid(address _tokenAddress, uint256 _tokenId, uint256 _index) 
+        internal 
+        view 
+        returns (Bid memory)
+    {
+        require(_index < bidCounterByToken[_tokenAddress][_tokenId], "Invalid index");
+        return bidsByToken[_tokenAddress][_tokenId][_index];
+    }
+
+     /**
+    * @dev Sets the share cut for the owner of the contract that's
+    * charged to the seller on a successful sale
+    * @param _ownerCutPerMillion - Share amount, from 0 to 999,999
+    */
+    function setOwnerCutPerMillion(uint256 _ownerCutPerMillion) external onlyOwner {
+        require(_ownerCutPerMillion < 1000000, "The owner cut should be between 0 and 999,999");
+
+        ownerCutPerMillion = _ownerCutPerMillion;
+        emit ChangedOwnerCutPerMillion(ownerCutPerMillion);
     }
 
     function _bytesToBytes32(bytes memory _data) internal pure returns (bytes32) {
@@ -334,5 +367,16 @@ contract ERC721Bid is Ownable, BidStorage {
                 "Token fingerprint is not valid"
             );
         }
+    }
+
+    function _requireBidderBalance(address _bidder, uint256 _price) internal view {
+        require(
+            manaToken.balanceOf(_bidder) >= _price,
+            "Insufficient funds"
+        );
+        require(
+            manaToken.allowance(_bidder, address(this)) >= _price,
+            "The contract is not authorized to use MANA on bidder behalf"
+        );        
     }
 }
