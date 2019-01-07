@@ -22,7 +22,74 @@ Bid contract for ERC721 tokens
 # Contract Interface
 
 ```solidity
-contract bidStorage {
+contract ERC721BidStorage {
+    uint256 public constant MIN_BID_DURATION = 1 minutes;
+    uint256 public constant MAX_BID_DURATION = 24 weeks;
+    uint256 public constant ONE_MILLION = 1000000;
+    bytes4 public constant ERC721_Interface = 0x80ac58cd;
+    bytes4 public constant ERC721_Received = 0x150b7a02;
+    bytes4 public constant ERC721Composable_ValidateFingerprint = 0x8f9f4b63;
+
+    struct Bid {
+        // Bid Id
+        bytes32 id;
+        // Bidder address
+        address bidder;
+        // ERC721 address
+        address tokenAddress;
+        // ERC721 token id
+        uint256 tokenId;
+        // Price for the bid in wei
+        uint256 price;
+        // Time when this bid ends
+        uint256 expiresAt;
+        // Fingerprint for composable
+        bytes fingerprint;
+    }
+
+    // MANA token
+    ERC20Interface public manaToken;
+
+    // Bid id by token address => token id => bid index => bid
+    mapping(address => mapping(uint256 => mapping(uint256 => Bid))) internal bidsByToken;
+    // Bid id by token address => token id => bid counts
+    mapping(address => mapping(uint256 => uint256)) public bidCounterByToken;
+    // Index of the bid at bidsByToken mapping
+    mapping(bytes32 => uint256) public bidIndexByBidId;
+    // Bid id by token address => token id => bidder address => bidId
+    mapping(address => mapping(uint256 => mapping(address => bytes32))) public bidByTokenAndBidder;
+
+
+    uint256 public ownerCutPerMillion;
+
+    // EVENTS
+    event BidCreated(
+      bytes32 _id,
+      address indexed _tokenAddress,
+      uint256 indexed _tokenId,
+      address indexed _bidder,
+      uint256 _price,
+      uint256 _expiresAt,
+      bytes _fingerprint
+    );
+
+    event BidAccepted(
+      bytes32 _id,
+      address indexed _tokenAddress,
+      uint256 indexed _tokenId,
+      address _bidder,
+      address indexed _buyer,
+      uint256 _totalPrice
+    );
+
+    event BidCancelled(
+      bytes32 _id,
+      address indexed _tokenAddress,
+      uint256 indexed _tokenId,
+      address indexed _bidder
+    );
+
+    event ChangedOwnerCutPerMillion(uint256 _ownerCutPerMillion);
 }
 
 contract Bid is Ownable {
