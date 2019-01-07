@@ -218,7 +218,7 @@ contract ERC721Bid is Ownable, Pausable, BidStorage {
         uint256 saleShareAmount = 0;
         if (ownerCutPerMillion > 0) {
             // Calculate sale share
-            saleShareAmount = price.mul(ownerCutPerMillion).div(1000000);
+            saleShareAmount = price.mul(ownerCutPerMillion).div(ONE_MILLION);
         }
         // Check if bidder has funds
         _requireBidderBalance(bidder, price.add(saleShareAmount));
@@ -252,7 +252,7 @@ contract ERC721Bid is Ownable, Pausable, BidStorage {
             _tokenId,
             bidder,
             _from,
-            price
+            price.add(saleShareAmount)
         );
 
         return ERC721_Received;
@@ -325,7 +325,7 @@ contract ERC721Bid is Ownable, Pausable, BidStorage {
     * @param _ownerCutPerMillion - Share amount, from 0 to 999,999
     */
     function setOwnerCutPerMillion(uint256 _ownerCutPerMillion) external onlyOwner {
-        require(_ownerCutPerMillion < 1000000, "The owner cut should be between 0 and 999,999");
+        require(_ownerCutPerMillion < ONE_MILLION, "The owner cut should be between 0 and 999,999");
 
         ownerCutPerMillion = _ownerCutPerMillion;
         emit ChangedOwnerCutPerMillion(ownerCutPerMillion);

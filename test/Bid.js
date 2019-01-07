@@ -37,6 +37,30 @@ async function getEvents(contract, eventName) {
   })
 }
 
+function scientificToDecimal(num) {
+  //if the number is in scientific notation remove it
+  if (/\d+\.?\d*e[+-]*\d+/i.test(num)) {
+    var zero = '0',
+      parts = String(num)
+        .toLowerCase()
+        .split('e'), //split into coeff and exponent
+      e = parts.pop(), //store the exponential part
+      l = Math.abs(e), //get the number of zeros
+      sign = e / l,
+      coeff_array = parts[0].split('.')
+    if (sign === -1) {
+      coeff_array[0] = Math.abs(coeff_array[0])
+      num = '-' + zero + '.' + new Array(l).join(zero) + coeff_array.join('')
+    } else {
+      var dec = coeff_array[1]
+      if (dec) l = l - dec.length
+      num = coeff_array.join('') + new Array(l + 1).join(zero)
+    }
+  }
+
+  return num
+}
+
 contract('Bid', function([
   _,
   owner,
@@ -834,6 +858,125 @@ contract('Bid', function([
           fromHolder
         )
       )
+    })
+  })
+
+  describe('ownertCut', function() {
+    it('should share sale', async function() {
+      let bidderBalance = await mana.balanceOf(bidder)
+      bidderBalance.should.be.bignumber.equal(initialBalance)
+
+      // Set 10% of bid price
+      await bidContract.setOwnerCutPerMillion(100000, fromOwner)
+
+      await bidContract.placeBid(
+        token.address,
+        tokenOne,
+        price,
+        twoWeeksInSeconds,
+        fromBidder
+      )
+
+      const [bidId] = await bidContract.getBidByToken(
+        token.address,
+        tokenOne,
+        0
+      )
+
+      await token.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenOne,
+        bidId,
+        fromHolder
+      )
+
+      const bidPrice = parseInt(price)
+
+      bidderBalance = await mana.balanceOf(bidder)
+      const expectedBalance = initialBalance - (bidPrice + bidPrice * 0.1)
+
+      scientificToDecimal(bidderBalance).should.be.equal(
+        scientificToDecimal(expectedBalance)
+      )
+    })
+
+    it('should set to 0', async function() {
+      let ownerCut = await bidContract.ownerCutPerMillion()
+      ownerCut.should.be.bignumber.equal(0)
+
+      await bidContract.setOwnerCutPerMillion(10000, fromOwner)
+      ownerCut = await bidContract.ownerCutPerMillion()
+      ownerCut.should.be.bignumber.equal(10000)
+
+      await bidContract.setOwnerCutPerMillion(0, fromOwner)
+      ownerCut = await bidContract.ownerCutPerMillion()
+      ownerCut.should.be.bignumber.equal(0)
+    })
+
+    it('reverts when calling by hacker', async function() {
+      await assertRevert(bidContract.setOwnerCutPerMillion(1000, fromHacker))
+    })
+
+    it('reverts when set bigger than 1000000', async function() {
+      await assertRevert(
+        bidContract.setOwnerCutPerMillion(1000001, fromOwner),
+        'The owner cut should be between 0 and 999,999'
+      )
+    })
+  })
+
+  describe('pausable', function() {
+    it('should be paused by the owner', async function() {
+      let isPaused = await bidContract.paused()
+      isPaused.should.be.equal(false)
+
+      await bidContract.placeBid(
+        token.address,
+        tokenOne,
+        price,
+        twoWeeksInSeconds,
+        fromBidder
+      )
+
+      const [bidId] = await bidContract.getBidByToken(
+        token.address,
+        tokenOne,
+        0
+      )
+
+      await bidContract.pause(fromOwner)
+
+      isPaused = await bidContract.paused()
+      isPaused.should.be.equal(true)
+
+      await assertRevert(
+        bidContract.placeBid(
+          token.address,
+          tokenOne,
+          price,
+          twoWeeksInSeconds,
+          fromBidder
+        )
+      )
+
+      await assertRevert(
+        bidContract.cancelBid(token.address, tokenOne, fromBidder)
+      )
+
+      await assertRevert(
+        token.safeTransferFromWithBytes(
+          holder,
+          bidContract.address,
+          tokenOne,
+          bidId,
+          fromHolder
+        )
+      )
+    })
+
+    it('reverts when pausing by hacker', async function() {
+      await assertRevert(bidContract.pause(fromHacker))
     })
   })
 })
