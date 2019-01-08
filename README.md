@@ -80,7 +80,7 @@ contract ERC721BidStorage {
       uint256 indexed _tokenId,
       address _bidder,
       address indexed _buyer,
-      uint256 _totalPrice
+      uint256 _price
     );
 
     event BidCancelled(

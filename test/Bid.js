@@ -525,7 +525,7 @@ contract('Bid', function([
         _tokenId: tokenOne,
         _bidder: bidder,
         _buyer: holder,
-        _totalPrice: price
+        _price: price
       })
 
       holderBalance = await mana.balanceOf(holder)
@@ -570,7 +570,7 @@ contract('Bid', function([
         _tokenId: tokenOne,
         _bidder: bidder,
         _buyer: holder,
-        _totalPrice: price
+        _price: price
       })
 
       holderBalance = await mana.balanceOf(holder)
