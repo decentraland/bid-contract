@@ -90,7 +90,7 @@ contract('Bid', function([
   const price = web3.toWei(100, 'ether').toString()
   const initialBalance = web3.toWei(10000, 'ether')
   const twoWeeksInSeconds = duration.weeks(2)
-  const sixMonthInSeconds = duration.weeks(24)
+  const moreThanSixMonthInSeconds = duration.weeks(24) + duration.seconds(1)
 
   const creationParams = {
     ...fromOwner,
@@ -371,7 +371,7 @@ contract('Bid', function([
           token.address,
           tokenOne,
           price,
-          sixMonthInSeconds,
+          moreThanSixMonthInSeconds,
           fromBidder
         ),
         'The bid longs 6 months at the most'
@@ -866,6 +866,12 @@ contract('Bid', function([
       let bidderBalance = await mana.balanceOf(bidder)
       bidderBalance.should.be.bignumber.equal(initialBalance)
 
+      let holderBalance = await mana.balanceOf(holder)
+      holderBalance.should.be.bignumber.equal(0)
+
+      let ownerBalance = await mana.balanceOf(owner)
+      ownerBalance.should.be.bignumber.equal(0)
+
       // Set 10% of bid price
       await bidContract.setOwnerCutPerMillion(100000, fromOwner)
 
@@ -894,11 +900,16 @@ contract('Bid', function([
       const bidPrice = parseInt(price)
 
       bidderBalance = await mana.balanceOf(bidder)
-      const expectedBalance = initialBalance - (bidPrice + bidPrice * 0.1)
 
       scientificToDecimal(bidderBalance).should.be.equal(
-        scientificToDecimal(expectedBalance)
+        scientificToDecimal(initialBalance - bidPrice)
       )
+
+      holderBalance = await mana.balanceOf(holder)
+      holderBalance.should.be.bignumber.equal(bidPrice - bidPrice * 0.1)
+
+      ownerBalance = await mana.balanceOf(owner)
+      ownerBalance.should.be.bignumber.equal(bidPrice * 0.1)
     })
 
     it('should set to 0', async function() {

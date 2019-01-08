@@ -1,6 +1,6 @@
 #! /bin/bash
 
-BID=Bid.sol
+BID=ERC721Bid.sol
 
 OUTPUT=full
 
