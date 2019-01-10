@@ -270,6 +270,18 @@ contract('Bid', function([
       )
     })
 
+    it('reverts when bidding a composable erc721 token whithout fingerprint', async function() {
+      await assertRevert(
+        bidContract.placeBid(
+          composableToken.address,
+          tokenOne,
+          price,
+          twoWeeksInSeconds,
+          fromBidder
+        )
+      )
+    })
+
     it('reverts when bidding a composable erc721 token with changed fingerprint', async function() {
       const fingerprint = await composableToken.getFingerprint(tokenTwo)
       await assertRevert(
@@ -338,7 +350,7 @@ contract('Bid', function([
       )
     })
 
-    it('reverts when bid with 0', async function() {
+    it('reverts when placing a bid with 0 as price', async function() {
       await assertRevert(
         bidContract.placeBid(
           token.address,
@@ -361,7 +373,7 @@ contract('Bid', function([
           oneMinuteInSeconds,
           fromBidder
         ),
-        'The bid should be more than 1 minute in the future'
+        'The bid should be last longer than a minute'
       )
     })
 
@@ -374,11 +386,11 @@ contract('Bid', function([
           moreThanSixMonthInSeconds,
           fromBidder
         ),
-        'The bid longs 6 months at the most'
+        'The bid can not last longer than 6 months'
       )
     })
 
-    it('reverts when bid an unowned token', async function() {
+    it('reverts when bidding an unowned token', async function() {
       await assertRevert(
         bidContract.placeBid(
           token.address,
@@ -387,6 +399,20 @@ contract('Bid', function([
           twoWeeksInSeconds,
           fromBidder
         )
+      )
+    })
+
+    it('reverts when bidding an owned token', async function() {
+      await token.transferFrom(holder, bidder, tokenOne, fromHolder)
+      await assertRevert(
+        bidContract.placeBid(
+          token.address,
+          tokenOne,
+          price,
+          twoWeeksInSeconds,
+          fromBidder
+        ),
+        'The token should have an owner different from the sender'
       )
     })
   })
@@ -401,7 +427,7 @@ contract('Bid', function([
         fromBidder
       )
     })
-    it('should cancel bid', async function() {
+    it('should cancel a bid', async function() {
       const [bidId] = await bidContract.getBidByToken(
         token.address,
         tokenOne,
@@ -432,7 +458,7 @@ contract('Bid', function([
       bidCounter.should.be.bignumber.equal(0)
     })
 
-    it('should cancel bid in the middle', async function() {
+    it('should cancel a bid in the middle', async function() {
       await placeMultipleBidsAndCheck(
         tokenOne,
         [bidder, anotherBidder, oneMoreBidder],
@@ -457,7 +483,7 @@ contract('Bid', function([
       bidData[2].should.be.bignumber.equal(price)
     })
 
-    it('reverts when cancel invalid bid', async function() {
+    it('reverts when cancelling invalid bid', async function() {
       await assertRevert(
         bidContract.cancelBid(token.address, tokenOne, fromAnotherBidder),
         'Bidder has not an active bid for this token'
@@ -525,7 +551,8 @@ contract('Bid', function([
         _tokenId: tokenOne,
         _bidder: bidder,
         _buyer: holder,
-        _price: price
+        _price: price,
+        _fee: '0'
       })
 
       holderBalance = await mana.balanceOf(holder)
@@ -898,6 +925,19 @@ contract('Bid', function([
       )
 
       const bidPrice = parseInt(price)
+
+      const logs = await getEvents(bidContract, 'BidAccepted')
+
+      logs.length.should.be.equal(1)
+      assertEvent(logs[0], 'BidAccepted', {
+        _id: bidId,
+        _tokenAddress: token.address,
+        _tokenId: tokenOne,
+        _bidder: bidder,
+        _buyer: holder,
+        _price: price,
+        _fee: (bidPrice * 0.1).toString()
+      })
 
       bidderBalance = await mana.balanceOf(bidder)
 

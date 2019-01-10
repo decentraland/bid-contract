@@ -35,7 +35,7 @@ contract ComposableToken is ERC721 {
     }
 
     function _bytesToBytes32(bytes memory _data) internal pure returns (bytes32) {
-        require(_data.length == 32, "Data should be 32 bytes length");
+        require(_data.length == 32, "The data should be 32 bytes length");
 
         bytes32 bidId;
         // solium-disable-next-line security/no-inline-assembly
