@@ -550,7 +550,7 @@ contract('Bid', function([
         _tokenAddress: token.address,
         _tokenId: tokenOne,
         _bidder: bidder,
-        _buyer: holder,
+        _seller: holder,
         _price: price,
         _fee: '0'
       })
@@ -596,7 +596,7 @@ contract('Bid', function([
         _tokenAddress: composableToken.address,
         _tokenId: tokenOne,
         _bidder: bidder,
-        _buyer: holder,
+        _seller: holder,
         _price: price
       })
 
@@ -934,7 +934,7 @@ contract('Bid', function([
         _tokenAddress: token.address,
         _tokenId: tokenOne,
         _bidder: bidder,
-        _buyer: holder,
+        _seller: holder,
         _price: price,
         _fee: (bidPrice * 0.1).toString()
       })
