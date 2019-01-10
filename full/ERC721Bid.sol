@@ -444,7 +444,7 @@ contract ERC721BidStorage {
       address indexed _tokenAddress,
       uint256 indexed _tokenId,
       address _bidder,
-      address indexed _buyer,
+      address indexed _seller,
       uint256 _price,
       uint256 _fee
     );
