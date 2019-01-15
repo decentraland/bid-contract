@@ -444,8 +444,9 @@ contract ERC721BidStorage {
       address indexed _tokenAddress,
       uint256 indexed _tokenId,
       address _bidder,
-      address indexed _buyer,
-      uint256 _price
+      address indexed _seller,
+      uint256 _price,
+      uint256 _fee
     );
 
     event BidCancelled(
@@ -516,7 +517,6 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     )
         public
     {
-        _requireComposableERC721(_tokenAddress, _tokenId, _fingerprint);
         _placeBid(
             _tokenAddress, 
             _tokenId,
@@ -530,8 +530,8 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     * @dev Place a bid for an ERC721 token with fingerprint.
     * @notice Tokens can have multiple bids by different users.
     * Users can have only one bid per token.
-    * If the user place a bid and has an active bid for that token,
-    * the old bid will be replaced with the new one.
+    * If the user places a bid and has an active bid for that token,
+    * the older one will be replaced with the new one.
     * @param _tokenAddress - address of the ERC721 token
     * @param _tokenId - uint256 of the token id
     * @param _price - uint256 of the price for the bid
@@ -549,6 +549,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
         whenNotPaused()
     {
         _requireERC721(_tokenAddress);
+        _requireComposableERC721(_tokenAddress, _tokenId, _fingerprint);
 
         require(_price > 0, "Price should be bigger than 0");
 
@@ -556,16 +557,20 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
 
         require(
             _expiresIn > MIN_BID_DURATION, 
-            "The bid should be more than 1 minute in the future"
+            "The bid should be last longer than a minute"
         );
 
         require(
             _expiresIn <= MAX_BID_DURATION, 
-            "The bid longs 6 months at the most"
+            "The bid can not last longer than 6 months"
         );
 
         ERC721Interface token = ERC721Interface(_tokenAddress);
-        require(token.ownerOf(_tokenId) != address(0), "Token should have an owner");
+        address tokenOwner = token.ownerOf(_tokenId);
+        require(
+            tokenOwner != address(0) && tokenOwner != msg.sender,
+            "The token should have an owner different from the sender"
+        );
 
         uint256 expiresAt = block.timestamp.add(_expiresIn);
 
@@ -658,7 +663,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
         address bidder = bid.bidder;
         uint256 price = bid.price;
         
-        // Check fingerprint if apply
+        // Check fingerprint if necessary
         _requireComposableERC721(msg.sender, _tokenId, bid.fingerprint);
 
         // Check if bidder has funds
@@ -697,7 +702,8 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
             _tokenId,
             bidder,
             _from,
-            price.add(saleShareAmount)
+            price,
+            saleShareAmount
         );
 
         return ERC721_Received;
@@ -768,7 +774,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
 
     /**
     * @dev Get the active bid id and index by a bidder and an specific token. 
-    * @notice If the bidder has not a valid bid, it will revert.
+    * @notice If the bidder has not a valid bid, the transaction will be reverted.
     * @param _tokenAddress - address of the ERC721 token
     * @param _tokenId - uint256 of the token id
     * @param _bidder - address of the bidder
@@ -828,7 +834,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     * @notice If the index is not valid, it will revert.
     * @param _tokenAddress - address of the ERC721 token
     * @param _tokenId - uint256 of the index
-    * @param _index - address of the bidder
+    * @param _index - uint256 of the index
     * @return Bid
     */
     function _getBid(address _tokenAddress, uint256 _tokenId, uint256 _index) 
@@ -858,7 +864,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     * @return bytes32
     */
     function _bytesToBytes32(bytes memory _data) internal pure returns (bytes32) {
-        require(_data.length == 32, "Data should be 32 bytes length");
+        require(_data.length == 32, "The data should be 32 bytes length");
 
         bytes32 bidId;
         // solium-disable-next-line security/no-inline-assembly
