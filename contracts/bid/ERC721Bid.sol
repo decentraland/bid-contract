@@ -144,7 +144,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
         }
 
         // Set bid references
-        bidByTokenAndBidder[_tokenAddress][_tokenId][msg.sender] = bidId;
+        bidIdByTokenAndBidder[_tokenAddress][_tokenId][msg.sender] = bidId;
         bidIndexByBidId[bidId] = bidIndex;
 
         // Save Bid
@@ -217,9 +217,9 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
 
         // Delete bid references from contract storage
         delete bidIndexByBidId[bidId];
-        delete bidByTokenAndBidder[msg.sender][_tokenId][bidder];
+        delete bidIdByTokenAndBidder[msg.sender][_tokenId][bidder];
 
-        // Reset bid counter (used to invalidate other bids placed for the token)
+        // Reset bid counter to invalidate other bids placed for the token
         delete bidCounterByToken[msg.sender][_tokenId];
         
         // Transfer token to bidder
@@ -229,14 +229,14 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
         if (ownerCutPerMillion > 0) {
             // Calculate sale share
             saleShareAmount = price.mul(ownerCutPerMillion).div(ONE_MILLION);
-            // Transfer share amount for bid conctract Owner
+            // Transfer share amount to the bid conctract Owner
             require(
                 manaToken.transferFrom(bidder, owner(), saleShareAmount),
                 "Transfering the cut to the bid contract owner failed"
             );
         }
 
-        // Transfer MANA from bidder to token owner
+        // Transfer MANA from bidder to seller
         require(
             manaToken.transferFrom(bidder, _from, price.sub(saleShareAmount)),
             "Transfering MANA to owner failed"
@@ -271,7 +271,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
 
         // Delete bid references
         delete bidIndexByBidId[bidId];
-        delete bidByTokenAndBidder[_tokenAddress][_tokenId][msg.sender];
+        delete bidIdByTokenAndBidder[_tokenAddress][_tokenId][msg.sender];
         
         // Check if the bid is at the end of the mapping
         uint256 lastBidIndex = bidCounterByToken[_tokenAddress][_tokenId].sub(1);
@@ -308,7 +308,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
         view 
         returns (bool)
     {
-        bytes32 bidId = bidByTokenAndBidder[_tokenAddress][_tokenId][_bidder];
+        bytes32 bidId = bidIdByTokenAndBidder[_tokenAddress][_tokenId][_bidder];
         uint256 bidIndex = bidIndexByBidId[bidId];
         // Bid index should be inside bounds
         if (bidIndex < bidCounterByToken[_tokenAddress][_tokenId]) {
@@ -341,7 +341,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
             uint256 expiresAt
         ) 
     {
-        bidId = bidByTokenAndBidder[_tokenAddress][_tokenId][_bidder];
+        bidId = bidIdByTokenAndBidder[_tokenAddress][_tokenId][_bidder];
         bidIndex = bidIndexByBidId[bidId];
         (bidId, bidder, price, expiresAt) = getBidByToken(_tokenAddress, _tokenId, bidIndex);
         if (_bidder != bidder) {

@@ -16,9 +16,6 @@ contract ERC20Interface {
  */
 contract ERC721Interface {
     function ownerOf(uint256 _tokenId) public view returns (address _owner);
-    // function approve(address _to, uint256 _tokenId) public;
-    // function getApproved(uint256 _tokenId) public view returns (address);
-    // function isApprovedForAll(address _owner, address _operator) public view returns (bool);
     function transferFrom(address _from, address _to, uint256 _tokenId) public;
     function supportsInterface(bytes4) public view returns (bool);
 }
@@ -57,14 +54,16 @@ contract ERC721BidStorage {
     // MANA token
     ERC20Interface public manaToken;
 
-    // Bid id by token address => token id => bid index => bid
+    // Bid by token address => token id => bid index => bid
     mapping(address => mapping(uint256 => mapping(uint256 => Bid))) internal bidsByToken;
-    // Bid id by token address => token id => bid counts
+    // Bid count by token address => token id => bid counts
     mapping(address => mapping(uint256 => uint256)) public bidCounterByToken;
-    // Index of the bid at bidsByToken mapping
+    // Index of the bid at bidsByToken mapping by bid id => bid index
     mapping(bytes32 => uint256) public bidIndexByBidId;
     // Bid id by token address => token id => bidder address => bidId
-    mapping(address => mapping(uint256 => mapping(address => bytes32))) public bidByTokenAndBidder;
+    mapping(address => mapping(uint256 => mapping(address => bytes32))) 
+    public 
+    bidIdByTokenAndBidder;
 
 
     uint256 public ownerCutPerMillion;
