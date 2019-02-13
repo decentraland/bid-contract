@@ -427,6 +427,7 @@ contract('Bid', function([
         fromBidder
       )
     })
+
     it('should cancel a bid', async function() {
       const [bidId] = await bidContract.getBidByToken(
         token.address,
@@ -1028,6 +1029,203 @@ contract('Bid', function([
 
     it('reverts when pausing by hacker', async function() {
       await assertRevert(bidContract.pause(fromHacker))
+    })
+  })
+
+  describe.only('Remove Bids', function() {
+    beforeEach(async function() {
+      await bidContract.placeBid(
+        token.address,
+        tokenOne,
+        price,
+        twoWeeksInSeconds,
+        fromBidder
+      )
+    })
+
+    it('should remove an expired bid by bidder}', async function() {
+      const [bidId] = await bidContract.getBidByToken(
+        token.address,
+        tokenOne,
+        0
+      )
+
+      let bidCounter = await bidContract.bidCounterByToken(
+        token.address,
+        tokenOne
+      )
+      bidCounter.should.be.bignumber.equal(1)
+
+      await increaseTime(twoWeeksInSeconds + duration.minutes(1))
+
+      const { logs } = await bidContract.removeExpiredBids(
+        [token.address],
+        [tokenOne],
+        [bidder],
+        fromBidder
+      )
+      logs.length.should.be.equal(1)
+
+      assertEvent(logs[0], 'BidCancelled', {
+        _id: bidId,
+        _tokenAddress: token.address,
+        _tokenId: tokenOne,
+        _bidder: bidder
+      })
+
+      bidCounter = await bidContract.bidCounterByToken(token.address, tokenOne)
+      bidCounter.should.be.bignumber.equal(0)
+    })
+
+    it('should remove an expired bid by anyone', async function() {
+      const [bidId] = await bidContract.getBidByToken(
+        token.address,
+        tokenOne,
+        0
+      )
+
+      let bidCounter = await bidContract.bidCounterByToken(
+        token.address,
+        tokenOne
+      )
+      bidCounter.should.be.bignumber.equal(1)
+
+      await increaseTime(twoWeeksInSeconds + duration.minutes(1))
+
+      const { logs } = await bidContract.removeExpiredBids(
+        [token.address],
+        [tokenOne],
+        [bidder],
+        fromAnotherBidder
+      )
+      logs.length.should.be.equal(1)
+
+      assertEvent(logs[0], 'BidCancelled', {
+        _id: bidId,
+        _tokenAddress: token.address,
+        _tokenId: tokenOne,
+        _bidder: bidder
+      })
+
+      bidCounter = await bidContract.bidCounterByToken(token.address, tokenOne)
+      bidCounter.should.be.bignumber.equal(0)
+    })
+
+    it('should remove an expired bid in the middle', async function() {
+      await placeMultipleBidsAndCheck(
+        tokenOne,
+        [bidder, anotherBidder, oneMoreBidder],
+        [1, 2, 3],
+        [0, 1, 2]
+      )
+
+      await increaseTime(twoWeeksInSeconds + duration.minutes(1))
+
+      await bidContract.removeExpiredBids(
+        [token.address],
+        [tokenOne],
+        [anotherBidder],
+        fromAnotherBidder
+      )
+
+      const bidCounter = await bidContract.bidCounterByToken(
+        token.address,
+        tokenOne
+      )
+      bidCounter.should.be.bignumber.equal(2)
+
+      let bidData = await bidContract.getBidByToken(token.address, tokenOne, 0)
+      bidData[1].should.be.equal(bidder)
+      bidData[2].should.be.bignumber.equal(price)
+
+      bidData = await bidContract.getBidByToken(token.address, tokenOne, 1)
+      bidData[1].should.be.equal(oneMoreBidder)
+      bidData[2].should.be.bignumber.equal(price)
+    })
+
+    it('reverts when removing invalid bid', async function() {
+      await assertRevert(
+        bidContract.removeExpiredBids(
+          [token.address],
+          [tokenOne],
+          [anotherBidder],
+          fromAnotherBidder
+        ),
+        'Bidder has not an active bid for this token'
+      )
+    })
+
+    it('reverts when cancelling a not expired bid', async function() {
+      await assertRevert(
+        bidContract.removeExpiredBids(
+          [token.address],
+          [tokenOne],
+          [bidder],
+          fromBidder
+        ),
+        'The bid to remove should be expired'
+      )
+    })
+
+    it('reverts when calling with different sized arrays', async function() {
+      await assertRevert(
+        bidContract.removeExpiredBids(
+          [token.address, tokenWithoutInterface.address],
+          [tokenOne],
+          [bidder],
+          fromBidder
+        ),
+        'Parameter arrays should have the same length'
+      )
+
+      await assertRevert(
+        bidContract.removeExpiredBids(
+          [token.address],
+          [tokenOne, tokenTwo],
+          [bidder],
+          fromBidder
+        ),
+        'Parameter arrays should have the same length'
+      )
+      await assertRevert(
+        bidContract.removeExpiredBids(
+          [token.address],
+          [tokenOne],
+          [bidder, anotherBidder],
+          fromBidder
+        ),
+        'Parameter arrays should have the same length'
+      )
+
+      await assertRevert(
+        bidContract.removeExpiredBids(
+          [token.address, tokenWithoutInterface.address],
+          [tokenOne, tokenTwo],
+          [bidder],
+          fromBidder
+        ),
+        'Parameter arrays should have the same length'
+      )
+
+      await assertRevert(
+        bidContract.removeExpiredBids(
+          [token.address, tokenWithoutInterface.address],
+          [tokenTwo],
+          [bidder, anotherBidder],
+          fromBidder
+        ),
+        'Parameter arrays should have the same length'
+      )
+
+      await assertRevert(
+        bidContract.removeExpiredBids(
+          [token.address],
+          [tokenOne, tokenTwo],
+          [bidder, anotherBidder],
+          fromBidder
+        ),
+        'Parameter arrays should have the same length'
+      )
     })
   })
 })
