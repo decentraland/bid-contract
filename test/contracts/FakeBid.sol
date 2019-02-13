@@ -11,7 +11,7 @@ contract FakeBid is ERC721Bid {
         address _tokenAddress, 
         uint256 _tokenId,
         uint256 _price,
-        uint256 _expiresIn,
+        uint256 _duration,
         bytes _fingerprint
     )
       external 
@@ -20,7 +20,7 @@ contract FakeBid is ERC721Bid {
             _tokenAddress, 
             _tokenId,
             _price,
-            _expiresIn,
+            _duration,
             _fingerprint 
         );
     }
