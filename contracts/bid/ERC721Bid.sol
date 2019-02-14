@@ -349,6 +349,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
             // Move last bid to the removed place
             Bid storage lastBid = bidsByToken[_tokenAddress][_tokenId][lastBidIndex];
             bidsByToken[_tokenAddress][_tokenId][_bidIndex] = lastBid;
+            bidIndexByBidId[lastBid.id] = _bidIndex;
         }
         
         // Delete empty index

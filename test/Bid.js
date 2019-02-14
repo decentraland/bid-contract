@@ -459,7 +459,7 @@ contract('Bid', function([
       bidCounter.should.be.bignumber.equal(0)
     })
 
-    it('should cancel a bid in the middle', async function() {
+    it('should cancel a bid in a different order from placed', async function() {
       await placeMultipleBidsAndCheck(
         tokenOne,
         [bidder, anotherBidder, oneMoreBidder],
@@ -469,7 +469,7 @@ contract('Bid', function([
 
       await bidContract.cancelBid(token.address, tokenOne, fromAnotherBidder)
 
-      const bidCounter = await bidContract.bidCounterByToken(
+      let bidCounter = await bidContract.bidCounterByToken(
         token.address,
         tokenOne
       )
@@ -482,6 +482,20 @@ contract('Bid', function([
       bidData = await bidContract.getBidByToken(token.address, tokenOne, 1)
       bidData[1].should.be.equal(oneMoreBidder)
       bidData[2].should.be.bignumber.equal(price)
+
+      await bidContract.cancelBid(token.address, tokenOne, fromOneMoreBidder)
+
+      bidCounter = await bidContract.bidCounterByToken(token.address, tokenOne)
+      bidCounter.should.be.bignumber.equal(1)
+
+      bidData = await bidContract.getBidByToken(token.address, tokenOne, 0)
+      bidData[1].should.be.equal(bidder)
+      bidData[2].should.be.bignumber.equal(price)
+
+      await bidContract.cancelBid(token.address, tokenOne, fromBidder)
+
+      bidCounter = await bidContract.bidCounterByToken(token.address, tokenOne)
+      bidCounter.should.be.bignumber.equal(0)
     })
 
     it('reverts when cancelling invalid bid', async function() {
@@ -1032,7 +1046,7 @@ contract('Bid', function([
     })
   })
 
-  describe.only('Remove Bids', function() {
+  describe('Remove Bids', function() {
     beforeEach(async function() {
       await bidContract.placeBid(
         token.address,
@@ -1141,6 +1155,53 @@ contract('Bid', function([
       bidData = await bidContract.getBidByToken(token.address, tokenOne, 1)
       bidData[1].should.be.equal(oneMoreBidder)
       bidData[2].should.be.bignumber.equal(price)
+    })
+
+    it('should remove expired bids', async function() {
+      await placeMultipleBidsAndCheck(
+        tokenOne,
+        [bidder, anotherBidder, oneMoreBidder],
+        [1, 2, 3],
+        [0, 1, 2]
+      )
+
+      const [[bidId1], [bidId2], [bidId3]] = await Promise.all([
+        bidContract.getBidByToken(token.address, tokenOne, 0),
+        bidContract.getBidByToken(token.address, tokenOne, 1),
+        bidContract.getBidByToken(token.address, tokenOne, 2)
+      ])
+
+      await increaseTime(twoWeeksInSeconds + duration.minutes(1))
+
+      const { logs } = await bidContract.removeExpiredBids(
+        [token.address, token.address, token.address],
+        [tokenOne, tokenOne, tokenOne],
+        [oneMoreBidder, bidder, anotherBidder],
+        fromAnotherBidder
+      )
+
+      logs.length.should.be.equal(3)
+
+      assertEvent(logs[0], 'BidCancelled', {
+        _id: bidId3,
+        _tokenAddress: token.address,
+        _tokenId: tokenOne,
+        _bidder: oneMoreBidder
+      })
+
+      assertEvent(logs[1], 'BidCancelled', {
+        _id: bidId1,
+        _tokenAddress: token.address,
+        _tokenId: tokenOne,
+        _bidder: bidder
+      })
+
+      assertEvent(logs[2], 'BidCancelled', {
+        _id: bidId2,
+        _tokenAddress: token.address,
+        _tokenId: tokenOne,
+        _bidder: anotherBidder
+      })
     })
 
     it('reverts when removing invalid bid', async function() {
