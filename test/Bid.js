@@ -903,7 +903,7 @@ contract('Bid', function([
     })
   })
 
-  describe('ownertCut', function() {
+  describe('Share sale', function() {
     it('should share sale', async function() {
       let bidderBalance = await mana.balanceOf(bidder)
       bidderBalance.should.be.bignumber.equal(initialBalance)
@@ -992,7 +992,7 @@ contract('Bid', function([
     })
   })
 
-  describe('pausable', function() {
+  describe('Pausable', function() {
     it('should be paused by the owner', async function() {
       let isPaused = await bidContract.paused()
       isPaused.should.be.equal(false)
@@ -1286,6 +1286,256 @@ contract('Bid', function([
           fromBidder
         ),
         'Parameter arrays should have the same length'
+      )
+    })
+  })
+
+  describe('End-2-End', function() {
+    it('should simulate a real case', async function() {
+      console.log('----- Place bids for tokenOne & tokenTwo -----')
+      await assertRevert(
+        bidContract.getBidByBidder(token.address, tokenOne, anotherBidder),
+        'Invalid index'
+      )
+
+      await placeMultipleBidsAndCheck(
+        tokenOne,
+        [bidder, anotherBidder, oneMoreBidder],
+        [1, 2, 3],
+        [0, 1, 2]
+      )
+
+      const [[tokenOneBid2], [tokenOneBid3]] = await Promise.all([
+        bidContract.getBidByToken(token.address, tokenOne, 1),
+        bidContract.getBidByToken(token.address, tokenOne, 2)
+      ])
+
+      await placeMultipleBidsAndCheck(
+        tokenTwo,
+        [bidder, anotherBidder, oneMoreBidder],
+        [1, 2, 3],
+        [0, 1, 2]
+      )
+
+      const [[tokenTwoBid1], [tokenTwoBid3]] = await Promise.all([
+        bidContract.getBidByToken(token.address, tokenTwo, 0),
+        bidContract.getBidByToken(token.address, tokenTwo, 2)
+      ])
+
+      console.log('----- Cancel first tokenOne bid -----')
+      await bidContract.cancelBid(token.address, tokenOne, fromBidder)
+
+      await assertRevert(
+        bidContract.getBidByBidder(token.address, tokenOne, bidder),
+        'Bidder has not an active bid for this token'
+      )
+
+      let bid = await bidContract.getBidByBidder(
+        token.address,
+        tokenOne,
+        anotherBidder
+      )
+      bid[0].should.be.bignumber.equal(1)
+      bid[1].should.be.equal(tokenOneBid2)
+
+      bid = await bidContract.getBidByBidder(
+        token.address,
+        tokenOne,
+        oneMoreBidder
+      )
+      bid[0].should.be.bignumber.equal(0)
+      bid[1].should.be.equal(tokenOneBid3)
+
+      console.log('----- Accept third bid placed for tokenOne -----')
+      await token.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenOne,
+        tokenOneBid3,
+        fromHolder
+      )
+
+      console.log('----- Check counter for tokenOne -----')
+      let bidCounter = await bidContract.bidCounterByToken(
+        token.address,
+        tokenOne
+      )
+      bidCounter.should.be.bignumber.equal(0)
+      await assertRevert(
+        bidContract.getBidByToken(token.address, tokenOne, 0),
+        'Invalid index'
+      )
+
+      console.log('----- Cancel second tokenTwo bid -----')
+      await bidContract.cancelBid(token.address, tokenTwo, fromAnotherBidder)
+
+      bid = await bidContract.getBidByBidder(token.address, tokenTwo, bidder)
+      bid[0].should.be.bignumber.equal(0)
+      bid[1].should.be.equal(tokenTwoBid1)
+
+      bid = await bidContract.getBidByBidder(
+        token.address,
+        tokenTwo,
+        oneMoreBidder
+      )
+      bid[0].should.be.bignumber.equal(1)
+      bid[1].should.be.equal(tokenTwoBid3)
+
+      console.log('----- Accept third bid placed for tokenTwo -----')
+      await token.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenTwo,
+        tokenTwoBid3,
+        fromHolder
+      )
+
+      console.log('----- Check counter for tokenOne -----')
+      bidCounter = await bidContract.bidCounterByToken(token.address, tokenTwo)
+      bidCounter.should.be.bignumber.equal(0)
+      await assertRevert(
+        bidContract.getBidByToken(token.address, tokenTwo, 0),
+        'Invalid index'
+      )
+
+      console.log('----- Return tokenOne to holder -----')
+      await token.transferFrom(
+        oneMoreBidder,
+        holder,
+        tokenOne,
+        fromOneMoreBidder
+      )
+
+      console.log('----- Place new bids for tokenOne -----')
+      await placeMultipleBidsAndCheck(
+        tokenOne,
+        [bidder, anotherBidder, oneMoreBidder],
+        [1, 2, 3],
+        [0, 1, 2]
+      )
+
+      const [tokenOneBid1] = await bidContract.getBidByToken(
+        token.address,
+        tokenOne,
+        0
+      )
+
+      console.log('----- Cancel second and third tokenOne bid -----')
+      await bidContract.cancelBid(token.address, tokenOne, fromOneMoreBidder)
+      await bidContract.cancelBid(token.address, tokenOne, fromAnotherBidder)
+
+      bid = await bidContract.getBidByBidder(token.address, tokenOne, bidder)
+      bid[0].should.be.bignumber.equal(0)
+      bid[1].should.be.equal(tokenOneBid1)
+
+      console.log('----- Accept first bid placed for tokenOne -----')
+      await token.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenOne,
+        tokenOneBid1,
+        fromHolder
+      )
+
+      console.log('----- Return tokenOne to holder -----')
+      await token.transferFrom(bidder, holder, tokenOne, fromBidder)
+
+      console.log('----- Place new bids for tokenOne -----')
+      await placeMultipleBidsAndCheck(
+        tokenOne,
+        [bidder, anotherBidder, oneMoreBidder],
+        [1, 2, 3],
+        [0, 1, 2]
+      )
+
+      const [tokenOneBid4] = await bidContract.getBidByToken(
+        token.address,
+        tokenOne,
+        2
+      )
+
+      console.log('----- Cancel second and first tokenOne bid -----')
+      await bidContract.cancelBid(token.address, tokenOne, fromAnotherBidder)
+      await bidContract.cancelBid(token.address, tokenOne, fromBidder)
+
+      await assertRevert(
+        bidContract.getBidByBidder(token.address, tokenOne, bidder),
+        'Bidder has not an active bid for this token'
+      )
+
+      await assertRevert(
+        bidContract.getBidByBidder(token.address, tokenOne, anotherBidder),
+        'Bidder has not an active bid for this token'
+      )
+
+      bid = await bidContract.getBidByBidder(
+        token.address,
+        tokenOne,
+        oneMoreBidder
+      )
+      bid[0].should.be.bignumber.equal(0)
+      bid[1].should.be.equal(tokenOneBid4)
+
+      console.log('----- Accept third bid placed for tokenOne -----')
+      await token.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenOne,
+        tokenOneBid4,
+        fromHolder
+      )
+
+      console.log('----- Return tokenOne to holder -----')
+      await token.transferFrom(
+        oneMoreBidder,
+        holder,
+        tokenOne,
+        fromOneMoreBidder
+      )
+
+      console.log('----- Place new bids for tokenOne -----')
+      await placeMultipleBidsAndCheck(
+        tokenOne,
+        [bidder, anotherBidder, oneMoreBidder],
+        [1, 2, 3],
+        [0, 1, 2]
+      )
+
+      const [tokenOneBid5] = await bidContract.getBidByToken(
+        token.address,
+        tokenOne,
+        1
+      )
+
+      console.log('----- Cancel first and third tokenOne bid -----')
+      await bidContract.cancelBid(token.address, tokenOne, fromBidder)
+      await bidContract.cancelBid(token.address, tokenOne, fromOneMoreBidder)
+
+      await assertRevert(
+        bidContract.getBidByBidder(token.address, tokenOne, bidder),
+        'Bidder has not an active bid for this token'
+      )
+
+      await assertRevert(
+        bidContract.getBidByBidder(token.address, tokenOne, oneMoreBidder),
+        'Bidder has not an active bid for this token'
+      )
+
+      bid = await bidContract.getBidByBidder(
+        token.address,
+        tokenOne,
+        anotherBidder
+      )
+      bid[0].should.be.bignumber.equal(0)
+      bid[1].should.be.equal(tokenOneBid5)
+
+      console.log('----- Accept second bid placed for tokenOne -----')
+      await token.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenOne,
+        tokenOneBid5,
+        fromHolder
       )
     })
   })
