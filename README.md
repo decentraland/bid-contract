@@ -181,13 +181,48 @@ contract Bid is Ownable {
         returns (bytes4);
 
     /**
+    * @dev Remove expired bids
+    * @param _tokenAddresses - address[] of the ERC721 tokens
+    * @param _tokenIds - uint256[] of the token ids
+    * @param _bidders - address[] of the bidders
+    */
+    function removeExpiredBids(address[] _tokenAddresses, uint256[] _tokenIds, address[] _bidders)
+    public;
+
+    /**
+    * @dev Remove expired bid
+    * @param _tokenAddress - address of the ERC721 token
+    * @param _tokenId - uint256 of the token id
+    * @param _bidder - address of the bidder
+    */
+    function _removeExpiredBid(address _tokenAddress, uint256 _tokenId, address _bidder)
+    internal;
+
+    /**
     * @dev Cancel a bid for an ERC721 token
     * @param _tokenAddress - address of the ERC721 token
     * @param _tokenId - uint256 of the token id
     */
     function cancelBid(address _tokenAddress, uint256 _tokenId) public whenNotPaused();
 
-     /**
+    /**
+    * @dev Cancel a bid for an ERC721 token
+    * @param _bidIndex - uint256 of the index of the bid
+    * @param _bidId - bytes32 of the bid id
+    * @param _tokenAddress - address of the ERC721 token
+    * @param _tokenId - uint256 of the token id
+    * @param _bidder - address of the bidder
+    */
+    function _cancelBid(
+        uint256 _bidIndex,
+        bytes32 _bidId,
+        address _tokenAddress,
+        uint256 _tokenId,
+        address _bidder
+    )
+        internal ;
+
+    /**
     * @dev Check if the bidder has an active bid for an specific token.
     * @param _tokenAddress - address of the ERC721 token
     * @param _tokenId - uint256 of the token id
