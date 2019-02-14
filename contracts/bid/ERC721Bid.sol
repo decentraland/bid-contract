@@ -27,13 +27,13 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     * @param _tokenAddress - address of the ERC721 token
     * @param _tokenId - uint256 of the token id
     * @param _price - uint256 of the price for the bid
-    * @param _expiresIn - uint256 of the duration in seconds for the bid
+    * @param _duration - uint256 of the duration in seconds for the bid
     */
     function placeBid(
         address _tokenAddress, 
         uint256 _tokenId,
         uint256 _price,
-        uint256 _expiresIn
+        uint256 _duration
     )
         public
     {
@@ -41,7 +41,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
             _tokenAddress, 
             _tokenId,
             _price,
-            _expiresIn,
+            _duration,
             ""
         );
     }
@@ -51,14 +51,14 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     * @param _tokenAddress - address of the ERC721 token
     * @param _tokenId - uint256 of the token id
     * @param _price - uint256 of the price for the bid
-    * @param _expiresIn - uint256 of the duration in seconds for the bid
+    * @param _duration - uint256 of the duration in seconds for the bid
     * @param _fingerprint - bytes of ERC721 token fingerprint 
     */
     function placeBid(
         address _tokenAddress, 
         uint256 _tokenId,
         uint256 _price,
-        uint256 _expiresIn,
+        uint256 _duration,
         bytes _fingerprint
     )
         public
@@ -67,7 +67,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
             _tokenAddress, 
             _tokenId,
             _price,
-            _expiresIn,
+            _duration,
             _fingerprint 
         );
     }
@@ -81,14 +81,14 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     * @param _tokenAddress - address of the ERC721 token
     * @param _tokenId - uint256 of the token id
     * @param _price - uint256 of the price for the bid
-    * @param _expiresIn - uint256 of the duration in seconds for the bid
+    * @param _duration - uint256 of the duration in seconds for the bid
     * @param _fingerprint - bytes of ERC721 token fingerprint 
     */
     function _placeBid(
         address _tokenAddress, 
         uint256 _tokenId,
         uint256 _price,
-        uint256 _expiresIn,
+        uint256 _duration,
         bytes memory _fingerprint
     )
         private
@@ -102,12 +102,12 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
         _requireBidderBalance(msg.sender, _price);       
 
         require(
-            _expiresIn > MIN_BID_DURATION, 
+            _duration > MIN_BID_DURATION, 
             "The bid should be last longer than a minute"
         );
 
         require(
-            _expiresIn <= MAX_BID_DURATION, 
+            _duration <= MAX_BID_DURATION, 
             "The bid can not last longer than 6 months"
         );
 
@@ -118,7 +118,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
             "The token should have an owner different from the sender"
         );
 
-        uint256 expiresAt = block.timestamp.add(_expiresIn);
+        uint256 expiresAt = block.timestamp.add(_duration);
 
         bytes32 bidId = keccak256(
             abi.encodePacked(
@@ -127,7 +127,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
                 _tokenAddress,
                 _tokenId,
                 _price,
-                _expiresIn,
+                _duration,
                 _fingerprint
             )
         );

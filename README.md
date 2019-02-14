@@ -5,7 +5,7 @@ Bid contract for ERC721 tokens
 ## How it works
 
 - Bidders should approve the Bid Contract to operate MANA on their behalf.
-- Bids are placed on-chain calling `bid(tokenAddress, tokenId, price, expiresIn)` or `bid(tokenAddress, tokenId, price, expiresIn, fingerPrint)` for composable tokens.
+- Bids are placed on-chain calling `bid(tokenAddress, tokenId, price, duration)` or `bid(tokenAddress, tokenId, price, duration, fingerPrint)` for composable tokens.
 - Bids can be placed for published & unpublished tokens.
 - Bids can be cancelled.
 - A token can have multiple bids, but _only one_ per address.
@@ -107,13 +107,13 @@ contract Bid is Ownable {
     * @param _tokenAddress - address of the ERC721 token
     * @param _tokenId - uint256 of the token id
     * @param _price - uint256 of the price for the bid
-    * @param _expiresIn - uint256 of the duration in seconds for the bid
+    * @param _duration - uint256 of the duration in seconds for the bid
     */
     function placeBid(
         address _tokenAddress,
         uint256 _tokenId,
         uint256 _price,
-        uint256 _expiresIn
+        uint256 _duration
     )
         public;
 
@@ -122,14 +122,14 @@ contract Bid is Ownable {
     * @param _tokenAddress - address of the ERC721 token
     * @param _tokenId - uint256 of the token id
     * @param _price - uint256 of the price for the bid
-    * @param _expiresIn - uint256 of the duration in seconds for the bid
+    * @param _duration - uint256 of the duration in seconds for the bid
     * @param _fingerprint - bytes of ERC721 token fingerprint
     */
     function placeBid(
         address _tokenAddress,
         uint256 _tokenId,
         uint256 _price,
-        uint256 _expiresIn,
+        uint256 _duration,
         bytes _fingerprint
     )
         public;
@@ -143,14 +143,14 @@ contract Bid is Ownable {
     * @param _tokenAddress - address of the ERC721 token
     * @param _tokenId - uint256 of the token id
     * @param _price - uint256 of the price for the bid
-    * @param _expiresIn - uint256 of the duration in seconds for the bid
+    * @param _duration - uint256 of the duration in seconds for the bid
     * @param _fingerprint - bytes of ERC721 token fingerprint
     */
     function _placeBid(
         address _tokenAddress,
         uint256 _tokenId,
         uint256 _price,
-        uint256 _expiresIn,
+        uint256 _duration,
         bytes memory _fingerprint
     )
         private
