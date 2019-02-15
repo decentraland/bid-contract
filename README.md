@@ -22,7 +22,7 @@ Bid contract for ERC721 tokens
 
 # Contract Interface
 
-```solidity
+````solidity
 contract ERC721BidStorage {
     uint256 public constant MIN_BID_DURATION = 1 minutes;
     uint256 public constant MAX_BID_DURATION = 24 weeks;
@@ -329,4 +329,5 @@ contract Bid is Ownable {
     */
     function _requireBidderBalance(address _bidder, uint256 _amount) internal view;
 }
-```
+```s
+````
