@@ -258,6 +258,23 @@ contract('Bid', function([
       await placeAndCheckBid(tokenTwo, bidder, price, 2, 1)
     })
 
+    it('should clean old bid reference when reusing bid slot', async function() {
+      await placeAndCheckBid(tokenOne, bidder, price, 1, 0)
+      await placeAndCheckBid(tokenOne, anotherBidder, price, 2, 1)
+      let bid = await bidContract.getBidByToken(token.address, tokenOne, 1)
+      let bidIndex = await bidContract.bidIndexByBidId(bid[0])
+      bidIndex.should.be.bignumber.equal(1)
+
+      await placeAndCheckBid(tokenOne, anotherBidder, price, 2, 1)
+
+      bidIndex = await bidContract.bidIndexByBidId(bid[0])
+      bidIndex.should.be.bignumber.equal(0)
+
+      bid = await bidContract.getBidByToken(token.address, tokenOne, 1)
+      bidIndex = await bidContract.bidIndexByBidId(bid[0])
+      bidIndex.should.be.bignumber.equal(1)
+    })
+
     it('should bid an erc721 token with fingerprint', async function() {
       const fingerprint = await composableToken.getFingerprint(tokenOne)
       await bidContract.placeBidWithFingerprint(
