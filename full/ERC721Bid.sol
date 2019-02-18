@@ -358,8 +358,9 @@ contract ERC721Verifiable is ERC721Interface {
 
 
 contract ERC721BidStorage {
+    // 182 days - 26 weeks - 6 months
+    uint256 public constant MAX_BID_DURATION = 182 days;
     uint256 public constant MIN_BID_DURATION = 1 minutes;
-    uint256 public constant MAX_BID_DURATION = 24 weeks;
     uint256 public constant ONE_MILLION = 1000000;
     bytes4 public constant ERC721_Interface = 0x80ac58cd;
     bytes4 public constant ERC721_Received = 0x150b7a02;
