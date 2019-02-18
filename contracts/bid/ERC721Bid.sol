@@ -102,7 +102,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
         _requireBidderBalance(msg.sender, _price);       
 
         require(
-            _duration > MIN_BID_DURATION, 
+            _duration >= MIN_BID_DURATION, 
             "The bid should be last longer than a minute"
         );
 

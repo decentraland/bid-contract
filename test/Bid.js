@@ -380,14 +380,14 @@ contract('Bid', function([
       )
     })
 
-    it('reverts when bid expires in one minute or less', async function() {
-      const oneMinuteInSeconds = duration.minutes(1)
+    it('reverts when bid expires in less than a minute', async function() {
+      const fiftyNineSeconds = duration.seconds(59)
       await assertRevert(
         bidContract.placeBid(
           token.address,
           tokenOne,
           price,
-          oneMinuteInSeconds,
+          fiftyNineSeconds,
           fromBidder
         ),
         'The bid should be last longer than a minute'
