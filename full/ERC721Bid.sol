@@ -1,6 +1,7 @@
-pragma solidity ^0.4.24;
 
 // File: openzeppelin-solidity/contracts/ownership/Ownable.sol
+
+pragma solidity ^0.4.24;
 
 /**
  * @title Ownable
@@ -8,357 +9,328 @@ pragma solidity ^0.4.24;
  * functions, this simplifies the implementation of "user permissions".
  */
 contract Ownable {
-    address private _owner;
+  address private _owner;
 
-    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+  event OwnershipTransferred(
+    address indexed previousOwner,
+    address indexed newOwner
+  );
 
-    /**
-     * @dev The Ownable constructor sets the original `owner` of the contract to the sender
-     * account.
-     */
-    constructor () internal {
-        _owner = msg.sender;
-        emit OwnershipTransferred(address(0), _owner);
-    }
+  /**
+   * @dev The Ownable constructor sets the original `owner` of the contract to the sender
+   * account.
+   */
+  constructor() internal {
+    _owner = msg.sender;
+    emit OwnershipTransferred(address(0), _owner);
+  }
 
-    /**
-     * @return the address of the owner.
-     */
-    function owner() public view returns (address) {
-        return _owner;
-    }
+  /**
+   * @return the address of the owner.
+   */
+  function owner() public view returns(address) {
+    return _owner;
+  }
 
-    /**
-     * @dev Throws if called by any account other than the owner.
-     */
-    modifier onlyOwner() {
-        require(isOwner());
-        _;
-    }
+  /**
+   * @dev Throws if called by any account other than the owner.
+   */
+  modifier onlyOwner() {
+    require(isOwner());
+    _;
+  }
 
-    /**
-     * @return true if `msg.sender` is the owner of the contract.
-     */
-    function isOwner() public view returns (bool) {
-        return msg.sender == _owner;
-    }
+  /**
+   * @return true if `msg.sender` is the owner of the contract.
+   */
+  function isOwner() public view returns(bool) {
+    return msg.sender == _owner;
+  }
 
-    /**
-     * @dev Allows the current owner to relinquish control of the contract.
-     * @notice Renouncing to ownership will leave the contract without an owner.
-     * It will not be possible to call the functions with the `onlyOwner`
-     * modifier anymore.
-     */
-    function renounceOwnership() public onlyOwner {
-        emit OwnershipTransferred(_owner, address(0));
-        _owner = address(0);
-    }
+  /**
+   * @dev Allows the current owner to relinquish control of the contract.
+   * @notice Renouncing to ownership will leave the contract without an owner.
+   * It will not be possible to call the functions with the `onlyOwner`
+   * modifier anymore.
+   */
+  function renounceOwnership() public onlyOwner {
+    emit OwnershipTransferred(_owner, address(0));
+    _owner = address(0);
+  }
 
-    /**
-     * @dev Allows the current owner to transfer control of the contract to a newOwner.
-     * @param newOwner The address to transfer ownership to.
-     */
-    function transferOwnership(address newOwner) public onlyOwner {
-        _transferOwnership(newOwner);
-    }
+  /**
+   * @dev Allows the current owner to transfer control of the contract to a newOwner.
+   * @param newOwner The address to transfer ownership to.
+   */
+  function transferOwnership(address newOwner) public onlyOwner {
+    _transferOwnership(newOwner);
+  }
 
-    /**
-     * @dev Transfers control of the contract to a newOwner.
-     * @param newOwner The address to transfer ownership to.
-     */
-    function _transferOwnership(address newOwner) internal {
-        require(newOwner != address(0));
-        emit OwnershipTransferred(_owner, newOwner);
-        _owner = newOwner;
-    }
+  /**
+   * @dev Transfers control of the contract to a newOwner.
+   * @param newOwner The address to transfer ownership to.
+   */
+  function _transferOwnership(address newOwner) internal {
+    require(newOwner != address(0));
+    emit OwnershipTransferred(_owner, newOwner);
+    _owner = newOwner;
+  }
 }
 
 // File: openzeppelin-solidity/contracts/access/Roles.sol
+
+pragma solidity ^0.4.24;
 
 /**
  * @title Roles
  * @dev Library for managing addresses assigned to a Role.
  */
 library Roles {
-    struct Role {
-        mapping (address => bool) bearer;
-    }
+  struct Role {
+    mapping (address => bool) bearer;
+  }
 
-    /**
-     * @dev give an account access to this role
-     */
-    function add(Role storage role, address account) internal {
-        require(account != address(0));
-        require(!has(role, account));
+  /**
+   * @dev give an account access to this role
+   */
+  function add(Role storage role, address account) internal {
+    require(account != address(0));
+    require(!has(role, account));
 
-        role.bearer[account] = true;
-    }
+    role.bearer[account] = true;
+  }
 
-    /**
-     * @dev remove an account's access to this role
-     */
-    function remove(Role storage role, address account) internal {
-        require(account != address(0));
-        require(has(role, account));
+  /**
+   * @dev remove an account's access to this role
+   */
+  function remove(Role storage role, address account) internal {
+    require(account != address(0));
+    require(has(role, account));
 
-        role.bearer[account] = false;
-    }
+    role.bearer[account] = false;
+  }
 
-    /**
-     * @dev check if an account has this role
-     * @return bool
-     */
-    function has(Role storage role, address account) internal view returns (bool) {
-        require(account != address(0));
-        return role.bearer[account];
-    }
+  /**
+   * @dev check if an account has this role
+   * @return bool
+   */
+  function has(Role storage role, address account)
+    internal
+    view
+    returns (bool)
+  {
+    require(account != address(0));
+    return role.bearer[account];
+  }
 }
 
 // File: openzeppelin-solidity/contracts/access/roles/PauserRole.sol
 
+pragma solidity ^0.4.24;
+
+
 contract PauserRole {
-    using Roles for Roles.Role;
+  using Roles for Roles.Role;
 
-    event PauserAdded(address indexed account);
-    event PauserRemoved(address indexed account);
+  event PauserAdded(address indexed account);
+  event PauserRemoved(address indexed account);
 
-    Roles.Role private _pausers;
+  Roles.Role private pausers;
 
-    constructor () internal {
-        _addPauser(msg.sender);
-    }
+  constructor() internal {
+    _addPauser(msg.sender);
+  }
 
-    modifier onlyPauser() {
-        require(isPauser(msg.sender));
-        _;
-    }
+  modifier onlyPauser() {
+    require(isPauser(msg.sender));
+    _;
+  }
 
-    function isPauser(address account) public view returns (bool) {
-        return _pausers.has(account);
-    }
+  function isPauser(address account) public view returns (bool) {
+    return pausers.has(account);
+  }
 
-    function addPauser(address account) public onlyPauser {
-        _addPauser(account);
-    }
+  function addPauser(address account) public onlyPauser {
+    _addPauser(account);
+  }
 
-    function renouncePauser() public {
-        _removePauser(msg.sender);
-    }
+  function renouncePauser() public {
+    _removePauser(msg.sender);
+  }
 
-    function _addPauser(address account) internal {
-        _pausers.add(account);
-        emit PauserAdded(account);
-    }
+  function _addPauser(address account) internal {
+    pausers.add(account);
+    emit PauserAdded(account);
+  }
 
-    function _removePauser(address account) internal {
-        _pausers.remove(account);
-        emit PauserRemoved(account);
-    }
+  function _removePauser(address account) internal {
+    pausers.remove(account);
+    emit PauserRemoved(account);
+  }
 }
 
 // File: openzeppelin-solidity/contracts/lifecycle/Pausable.sol
+
+pragma solidity ^0.4.24;
+
 
 /**
  * @title Pausable
  * @dev Base contract which allows children to implement an emergency stop mechanism.
  */
 contract Pausable is PauserRole {
-    event Paused(address account);
-    event Unpaused(address account);
+  event Paused(address account);
+  event Unpaused(address account);
 
-    bool private _paused;
+  bool private _paused;
 
-    constructor () internal {
-        _paused = false;
-    }
+  constructor() internal {
+    _paused = false;
+  }
 
-    /**
-     * @return true if the contract is paused, false otherwise.
-     */
-    function paused() public view returns (bool) {
-        return _paused;
-    }
+  /**
+   * @return true if the contract is paused, false otherwise.
+   */
+  function paused() public view returns(bool) {
+    return _paused;
+  }
 
-    /**
-     * @dev Modifier to make a function callable only when the contract is not paused.
-     */
-    modifier whenNotPaused() {
-        require(!_paused);
-        _;
-    }
+  /**
+   * @dev Modifier to make a function callable only when the contract is not paused.
+   */
+  modifier whenNotPaused() {
+    require(!_paused);
+    _;
+  }
 
-    /**
-     * @dev Modifier to make a function callable only when the contract is paused.
-     */
-    modifier whenPaused() {
-        require(_paused);
-        _;
-    }
+  /**
+   * @dev Modifier to make a function callable only when the contract is paused.
+   */
+  modifier whenPaused() {
+    require(_paused);
+    _;
+  }
 
-    /**
-     * @dev called by the owner to pause, triggers stopped state
-     */
-    function pause() public onlyPauser whenNotPaused {
-        _paused = true;
-        emit Paused(msg.sender);
-    }
+  /**
+   * @dev called by the owner to pause, triggers stopped state
+   */
+  function pause() public onlyPauser whenNotPaused {
+    _paused = true;
+    emit Paused(msg.sender);
+  }
 
-    /**
-     * @dev called by the owner to unpause, returns to normal state
-     */
-    function unpause() public onlyPauser whenPaused {
-        _paused = false;
-        emit Unpaused(msg.sender);
-    }
+  /**
+   * @dev called by the owner to unpause, returns to normal state
+   */
+  function unpause() public onlyPauser whenPaused {
+    _paused = false;
+    emit Unpaused(msg.sender);
+  }
 }
 
 // File: openzeppelin-solidity/contracts/math/SafeMath.sol
+
+pragma solidity ^0.4.24;
 
 /**
  * @title SafeMath
  * @dev Math operations with safety checks that revert on error
  */
 library SafeMath {
-    int256 constant private INT256_MIN = -2**255;
 
-    /**
-    * @dev Multiplies two unsigned integers, reverts on overflow.
-    */
-    function mul(uint256 a, uint256 b) internal pure returns (uint256) {
-        // Gas optimization: this is cheaper than requiring 'a' not being zero, but the
-        // benefit is lost if 'b' is also tested.
-        // See: https://github.com/OpenZeppelin/openzeppelin-solidity/pull/522
-        if (a == 0) {
-            return 0;
-        }
-
-        uint256 c = a * b;
-        require(c / a == b);
-
-        return c;
+  /**
+  * @dev Multiplies two numbers, reverts on overflow.
+  */
+  function mul(uint256 a, uint256 b) internal pure returns (uint256) {
+    // Gas optimization: this is cheaper than requiring 'a' not being zero, but the
+    // benefit is lost if 'b' is also tested.
+    // See: https://github.com/OpenZeppelin/openzeppelin-solidity/pull/522
+    if (a == 0) {
+      return 0;
     }
 
-    /**
-    * @dev Multiplies two signed integers, reverts on overflow.
-    */
-    function mul(int256 a, int256 b) internal pure returns (int256) {
-        // Gas optimization: this is cheaper than requiring 'a' not being zero, but the
-        // benefit is lost if 'b' is also tested.
-        // See: https://github.com/OpenZeppelin/openzeppelin-solidity/pull/522
-        if (a == 0) {
-            return 0;
-        }
+    uint256 c = a * b;
+    require(c / a == b);
 
-        require(!(a == -1 && b == INT256_MIN)); // This is the only case of overflow not detected by the check below
+    return c;
+  }
 
-        int256 c = a * b;
-        require(c / a == b);
+  /**
+  * @dev Integer division of two numbers truncating the quotient, reverts on division by zero.
+  */
+  function div(uint256 a, uint256 b) internal pure returns (uint256) {
+    require(b > 0); // Solidity only automatically asserts when dividing by 0
+    uint256 c = a / b;
+    // assert(a == b * c + a % b); // There is no case in which this doesn't hold
 
-        return c;
-    }
+    return c;
+  }
 
-    /**
-    * @dev Integer division of two unsigned integers truncating the quotient, reverts on division by zero.
-    */
-    function div(uint256 a, uint256 b) internal pure returns (uint256) {
-        // Solidity only automatically asserts when dividing by 0
-        require(b > 0);
-        uint256 c = a / b;
-        // assert(a == b * c + a % b); // There is no case in which this doesn't hold
+  /**
+  * @dev Subtracts two numbers, reverts on overflow (i.e. if subtrahend is greater than minuend).
+  */
+  function sub(uint256 a, uint256 b) internal pure returns (uint256) {
+    require(b <= a);
+    uint256 c = a - b;
 
-        return c;
-    }
+    return c;
+  }
 
-    /**
-    * @dev Integer division of two signed integers truncating the quotient, reverts on division by zero.
-    */
-    function div(int256 a, int256 b) internal pure returns (int256) {
-        require(b != 0); // Solidity only automatically asserts when dividing by 0
-        require(!(b == -1 && a == INT256_MIN)); // This is the only case of overflow
+  /**
+  * @dev Adds two numbers, reverts on overflow.
+  */
+  function add(uint256 a, uint256 b) internal pure returns (uint256) {
+    uint256 c = a + b;
+    require(c >= a);
 
-        int256 c = a / b;
+    return c;
+  }
 
-        return c;
-    }
-
-    /**
-    * @dev Subtracts two unsigned integers, reverts on overflow (i.e. if subtrahend is greater than minuend).
-    */
-    function sub(uint256 a, uint256 b) internal pure returns (uint256) {
-        require(b <= a);
-        uint256 c = a - b;
-
-        return c;
-    }
-
-    /**
-    * @dev Subtracts two signed integers, reverts on overflow.
-    */
-    function sub(int256 a, int256 b) internal pure returns (int256) {
-        int256 c = a - b;
-        require((b >= 0 && c <= a) || (b < 0 && c > a));
-
-        return c;
-    }
-
-    /**
-    * @dev Adds two unsigned integers, reverts on overflow.
-    */
-    function add(uint256 a, uint256 b) internal pure returns (uint256) {
-        uint256 c = a + b;
-        require(c >= a);
-
-        return c;
-    }
-
-    /**
-    * @dev Adds two signed integers, reverts on overflow.
-    */
-    function add(int256 a, int256 b) internal pure returns (int256) {
-        int256 c = a + b;
-        require((b >= 0 && c >= a) || (b < 0 && c < a));
-
-        return c;
-    }
-
-    /**
-    * @dev Divides two unsigned integers and returns the remainder (unsigned integer modulo),
-    * reverts when dividing by zero.
-    */
-    function mod(uint256 a, uint256 b) internal pure returns (uint256) {
-        require(b != 0);
-        return a % b;
-    }
+  /**
+  * @dev Divides two numbers and returns the remainder (unsigned integer modulo),
+  * reverts when dividing by zero.
+  */
+  function mod(uint256 a, uint256 b) internal pure returns (uint256) {
+    require(b != 0);
+    return a % b;
+  }
 }
 
 // File: openzeppelin-solidity/contracts/utils/Address.sol
+
+pragma solidity ^0.4.24;
 
 /**
  * Utility library of inline functions on addresses
  */
 library Address {
-    /**
-     * Returns whether the target address is a contract
-     * @dev This function will return false if invoked during the constructor of a contract,
-     * as the code is not actually created until after the constructor finishes.
-     * @param account address of the account to check
-     * @return whether the target address is a contract
-     */
-    function isContract(address account) internal view returns (bool) {
-        uint256 size;
-        // XXX Currently there is no better way to check if there is a contract in an address
-        // than to check the size of the code at that address.
-        // See https://ethereum.stackexchange.com/a/14016/36603
-        // for more details about how this works.
-        // TODO Check this again before the Serenity release, because all addresses will be
-        // contracts then.
-        // solium-disable-next-line security/no-inline-assembly
-        assembly { size := extcodesize(account) }
-        return size > 0;
-    }
+
+  /**
+   * Returns whether the target address is a contract
+   * @dev This function will return false if invoked during the constructor of a contract,
+   * as the code is not actually created until after the constructor finishes.
+   * @param account address of the account to check
+   * @return whether the target address is a contract
+   */
+  function isContract(address account) internal view returns (bool) {
+    uint256 size;
+    // XXX Currently there is no better way to check if there is a contract in an address
+    // than to check the size of the code at that address.
+    // See https://ethereum.stackexchange.com/a/14016/36603
+    // for more details about how this works.
+    // TODO Check this again before the Serenity release, because all addresses will be
+    // contracts then.
+    // solium-disable-next-line security/no-inline-assembly
+    assembly { size := extcodesize(account) }
+    return size > 0;
+  }
+
 }
 
 // File: contracts/bid/ERC721BidStorage.sol
+
+pragma solidity ^0.4.24;
+
 
 /**
  * @title Interface for contracts conforming to ERC-20
@@ -459,6 +431,14 @@ contract ERC721BidStorage {
 }
 
 // File: contracts/bid/ERC721Bid.sol
+
+pragma solidity ^0.4.24;
+
+
+
+
+
+
 
 contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     using SafeMath for uint256;
@@ -588,7 +568,11 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
         uint256 bidIndex;
 
         if (_bidderHasAnActiveBid(_tokenAddress, _tokenId, msg.sender)) {
-            (bidIndex,,,,) = getBidByBidder(_tokenAddress, _tokenId, msg.sender);
+            bytes32 oldBidId;
+            (bidIndex, oldBidId,,,) = getBidByBidder(_tokenAddress, _tokenId, msg.sender);
+            
+            // Delete old bid reference
+            delete bidIndexByBidId[oldBidId];
         } else {
             // Use the bid counter to assign the index if there is not an active bid. 
             bidIndex = bidCounterByToken[_tokenAddress][_tokenId];  

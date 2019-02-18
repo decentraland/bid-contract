@@ -136,7 +136,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
 
         if (_bidderHasAnActiveBid(_tokenAddress, _tokenId, msg.sender)) {
             bytes32 oldBidId;
-            (bidIndex,oldBidId,,,) = getBidByBidder(_tokenAddress, _tokenId, msg.sender);
+            (bidIndex, oldBidId,,,) = getBidByBidder(_tokenAddress, _tokenId, msg.sender);
             
             // Delete old bid reference
             delete bidIndexByBidId[oldBidId];
