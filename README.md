@@ -223,13 +223,13 @@ contract Bid is Ownable {
         internal ;
 
     /**
-    * @dev Check if the bidder has an active bid for an specific token.
+    * @dev Check if the bidder has a bid for an specific token.
     * @param _tokenAddress - address of the ERC721 token
     * @param _tokenId - uint256 of the token id
     * @param _bidder - address of the bidder
     * @return bool whether the bidder has an active bid
     */
-    function _bidderHasAnActiveBid(address _tokenAddress, uint256 _tokenId, address _bidder)
+    function _bidderHasABid(address _tokenAddress, uint256 _tokenId, address _bidder)
         internal
         view
         returns (bool);

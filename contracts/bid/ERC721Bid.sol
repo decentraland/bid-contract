@@ -134,7 +134,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
 
         uint256 bidIndex;
 
-        if (_bidderHasAnActiveBid(_tokenAddress, _tokenId, msg.sender)) {
+        if (_bidderHasABid(_tokenAddress, _tokenId, msg.sender)) {
             bytes32 oldBidId;
             (bidIndex, oldBidId,,,) = getBidByBidder(_tokenAddress, _tokenId, msg.sender);
             
@@ -373,13 +373,13 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     }
 
      /**
-    * @dev Check if the bidder has an active bid for an specific token.
+    * @dev Check if the bidder has a bid for an specific token.
     * @param _tokenAddress - address of the ERC721 token
     * @param _tokenId - uint256 of the token id
     * @param _bidder - address of the bidder
     * @return bool whether the bidder has an active bid
     */
-    function _bidderHasAnActiveBid(address _tokenAddress, uint256 _tokenId, address _bidder) 
+    function _bidderHasABid(address _tokenAddress, uint256 _tokenId, address _bidder) 
         internal
         view 
         returns (bool)
