@@ -607,14 +607,17 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     }
 
     /**
-    * @dev The ERC721 smart contract calls this function on the recipient
+    * @dev Used as the only way to accept a bid. 
+    * The token owner should send the token to this contract using safeTransferFrom.
+    * The last parameter (bytes) should be the bid id.
+    * @notice  The ERC721 smart contract calls this function on the recipient
     * after a `safetransfer`. This function MAY throw to revert and reject the
     * transfer. Return of other than the magic value MUST result in the
     * transaction being reverted.
     * Note: 
-    * @notice The contract address is always the message sender.
+    * Contract address is always the message sender.
     * This method should be seen as 'acceptBid'.
-    * It is the only way to accept a bid for an ERC721.
+    * It validates that the bid id matches an active bid for the bid token.
     * @param _from The address which previously owned the token
     * @param _tokenId The NFT identifier which is being transferred
     * @param _data Additional data with no specified format
