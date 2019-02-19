@@ -135,7 +135,11 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
         uint256 bidIndex;
 
         if (_bidderHasAnActiveBid(_tokenAddress, _tokenId, msg.sender)) {
-            (bidIndex,,,,) = getBidByBidder(_tokenAddress, _tokenId, msg.sender);
+            bytes32 oldBidId;
+            (bidIndex, oldBidId,,,) = getBidByBidder(_tokenAddress, _tokenId, msg.sender);
+            
+            // Delete old bid reference
+            delete bidIndexByBidId[oldBidId];
         } else {
             // Use the bid counter to assign the index if there is not an active bid. 
             bidIndex = bidCounterByToken[_tokenAddress][_tokenId];  
@@ -216,6 +220,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
         _requireBidderBalance(bidder, price);
 
         // Delete bid references from contract storage
+        delete bidsByToken[msg.sender][_tokenId][bidIndex];
         delete bidIndexByBidId[bidId];
         delete bidIdByTokenAndBidder[msg.sender][_tokenId][bidder];
 

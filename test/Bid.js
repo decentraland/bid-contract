@@ -88,6 +88,7 @@ contract('Bid', function([
   const tokenTwo = '2'
   const unownedToken = '100'
   const price = web3.toWei(100, 'ether').toString()
+  const newPrice = web3.toWei(10, 'ether')
   const initialBalance = web3.toWei(10000, 'ether')
   const twoWeeksInSeconds = duration.weeks(2)
   const moreThanSixMonthInSeconds = duration.weeks(24) + duration.seconds(1)
@@ -243,7 +244,6 @@ contract('Bid', function([
     it('should re-use bid slot when bidder bid and previously has an active bid', async function() {
       await placeAndCheckBid(tokenOne, bidder, price, 1, 0)
 
-      const newPrice = parseInt(price) + parseInt(web3.toWei(10, 'ether'))
       await placeAndCheckBid(tokenOne, bidder, newPrice, 1, 0)
 
       await placeAndCheckBid(tokenOne, anotherBidder, price, 2, 1)
@@ -256,6 +256,23 @@ contract('Bid', function([
 
       await placeAndCheckBid(tokenTwo, anotherBidder, price, 1, 0)
       await placeAndCheckBid(tokenTwo, bidder, price, 2, 1)
+    })
+
+    it('should clean old bid reference when reusing bid slot', async function() {
+      await placeAndCheckBid(tokenOne, bidder, price, 1, 0)
+      await placeAndCheckBid(tokenOne, anotherBidder, price, 2, 1)
+      let bid = await bidContract.getBidByToken(token.address, tokenOne, 1)
+      let bidIndex = await bidContract.bidIndexByBidId(bid[0])
+      bidIndex.should.be.bignumber.equal(1)
+
+      await placeAndCheckBid(tokenOne, anotherBidder, newPrice, 2, 1)
+
+      bidIndex = await bidContract.bidIndexByBidId(bid[0])
+      bidIndex.should.be.bignumber.equal(0)
+
+      bid = await bidContract.getBidByToken(token.address, tokenOne, 1)
+      bidIndex = await bidContract.bidIndexByBidId(bid[0])
+      bidIndex.should.be.bignumber.equal(1)
     })
 
     it('should bid an erc721 token with fingerprint', async function() {
