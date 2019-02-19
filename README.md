@@ -24,8 +24,9 @@ Bid contract for ERC721 tokens
 
 ```solidity
 contract ERC721BidStorage {
+    // 182 days - 26 weeks - 6 months
+    uint256 public constant MAX_BID_DURATION = 182 days;
     uint256 public constant MIN_BID_DURATION = 1 minutes;
-    uint256 public constant MAX_BID_DURATION = 24 weeks;
     uint256 public constant ONE_MILLION = 1000000;
     bytes4 public constant ERC721_Interface = 0x80ac58cd;
     bytes4 public constant ERC721_Received = 0x150b7a02;
@@ -157,14 +158,17 @@ contract Bid is Ownable {
         whenNotPaused();
 
     /**
-    * @dev The ERC721 smart contract calls this function on the recipient
+    * @dev Used as the only way to accept a bid.
+    * The token owner should send the token to this contract using safeTransferFrom.
+    * The last parameter (bytes) should be the bid id.
+    * @notice  The ERC721 smart contract calls this function on the recipient
     * after a `safetransfer`. This function MAY throw to revert and reject the
     * transfer. Return of other than the magic value MUST result in the
     * transaction being reverted.
     * Note:
-    * @notice The contract address is always the message sender.
+    * Contract address is always the message sender.
     * This method should be seen as 'acceptBid'.
-    * It is the only way to accept a bid for an ERC721.
+    * It validates that the bid id matches an active bid for the bid token.
     * @param _from The address which previously owned the token
     * @param _tokenId The NFT identifier which is being transferred
     * @param _data Additional data with no specified format
@@ -223,13 +227,13 @@ contract Bid is Ownable {
         internal ;
 
     /**
-    * @dev Check if the bidder has an active bid for an specific token.
+    * @dev Check if the bidder has a bid for an specific token.
     * @param _tokenAddress - address of the ERC721 token
     * @param _tokenId - uint256 of the token id
     * @param _bidder - address of the bidder
     * @return bool whether the bidder has an active bid
     */
-    function _bidderHasAnActiveBid(address _tokenAddress, uint256 _tokenId, address _bidder)
+    function _bidderHasABid(address _tokenAddress, uint256 _tokenId, address _bidder)
         internal
         view
         returns (bool);

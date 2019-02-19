@@ -39,11 +39,10 @@
     "solidity-sha3": "^0.4.1",
     "solium": "^1.1.8",
     "truffle-flattener": "^1.2.4",
-    "truffle-hdwallet-provider": "0.0.3",
-    "web3": "^1.0.0-beta.35"
+    "truffle-hdwallet-provider": "0.0.3"
   },
   "dependencies": {
-    "openzeppelin-solidity": "^2.1.0-rc.1",
+    "openzeppelin-solidity": "2.0.0",
     "truffle": "^4.1.13"
   }
 }

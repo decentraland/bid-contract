@@ -91,7 +91,7 @@ contract('Bid', function([
   const newPrice = web3.toWei(10, 'ether')
   const initialBalance = web3.toWei(10000, 'ether')
   const twoWeeksInSeconds = duration.weeks(2)
-  const moreThanSixMonthInSeconds = duration.weeks(24) + duration.seconds(1)
+  const moreThanSixMonthInSeconds = duration.weeks(26) + duration.seconds(1)
 
   const creationParams = {
     ...fromOwner,
@@ -380,14 +380,14 @@ contract('Bid', function([
       )
     })
 
-    it('reverts when bid expires in one minute or less', async function() {
-      const oneMinuteInSeconds = duration.minutes(1)
+    it('reverts when bid expires in less than a minute', async function() {
+      const fiftyNineSeconds = duration.seconds(59)
       await assertRevert(
         bidContract.placeBid(
           token.address,
           tokenOne,
           price,
-          oneMinuteInSeconds,
+          fiftyNineSeconds,
           fromBidder
         ),
         'The bid should be last longer than a minute'
@@ -1074,7 +1074,7 @@ contract('Bid', function([
       )
     })
 
-    it('should remove an expired bid by bidder}', async function() {
+    it('should remove an expired bid by bidder', async function() {
       const [bidId] = await bidContract.getBidByToken(
         token.address,
         tokenOne,
