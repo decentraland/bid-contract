@@ -2,6 +2,10 @@
 
 Bid contract for ERC721 tokens
 
+## Install
+
+`npm i --save-dev bid-contract`
+
 ## How it works
 
 - Bidders should approve the Bid Contract to operate MANA on their behalf.
