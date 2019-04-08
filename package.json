@@ -1,5 +1,5 @@
 {
-  "name": "bid",
+  "name": "bid-contract",
   "version": "0.0.0-semantic-release",
   "description": "Bid contract",
   "main": "index.js",
