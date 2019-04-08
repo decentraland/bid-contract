@@ -14,14 +14,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/decentraland/bid.git"
+    "url": "git+https://github.com/decentraland/bid-contract.git"
   },
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/decentraland/bid/issues"
+    "url": "https://github.com/decentraland/bid-contract/issues"
   },
-  "homepage": "https://github.com/decentraland/bid#readme",
+  "homepage": "https://github.com/decentraland/bid-contract#readme",
   "devDependencies": {
     "babel-eslint": "^8.2.1",
     "babel-plugin-transform-object-rest-spread": "^6.26.0",
