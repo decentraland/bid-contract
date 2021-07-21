@@ -1,11 +1,15 @@
 import assertRevert from './helpers/assertRevert'
 import { increaseTime, duration } from './helpers/increaseTime'
+import { sendMetaTx } from './helpers/metaTx'
 
 const BigNumber = web3.BigNumber
 require('chai')
   .use(require('chai-as-promised'))
   .use(require('chai-bignumber')(BigNumber))
   .should()
+
+const BN = web3.utils.BN
+const expect = require('chai').use(require('bn-chai')(BN)).expect
 
 const BidContract = artifacts.require('FakeBid')
 const erc20 = artifacts.require('FakeERC20')
@@ -15,22 +19,23 @@ const TokenWithoutInterface = artifacts.require('TokenWithoutInterface')
 
 function assertEvent(log, expectedEventName, expectedArgs) {
   const { event, args } = log
-  event.should.be.eq(expectedEventName)
+  expect(event).to.be.equal(expectedEventName)
 
   if (expectedArgs) {
     for (let key in expectedArgs) {
       let value = args[key]
-      if (value instanceof BigNumber) {
-        value = value.toString()
+      if (web3.utils.isBN(value)) {
+        expect(value).to.be.eq.BN(expectedArgs[key], `[assertEvent] ${key}`)
+        continue
       }
-      value.should.be.equal(expectedArgs[key], `[assertEvent] ${key}`)
+      expect(value).to.be.equal(expectedArgs[key], `[assertEvent] ${key}`)
     }
   }
 }
 
 async function getEvents(contract, eventName) {
   return new Promise((resolve, reject) => {
-    contract[eventName]().get(function(err, logs) {
+    contract.getPastEvents(eventName, function(err, logs) {
       if (err) reject(new Error(`Error fetching the ${eventName} events`))
       resolve(logs)
     })
@@ -69,6 +74,7 @@ contract('Bid', function([
   anotherBidder,
   oneMoreBidder,
   bidderWithoutFunds,
+  relayer,
   hacker
 ]) {
   let bidContract
@@ -87,11 +93,13 @@ contract('Bid', function([
   const tokenOne = '1'
   const tokenTwo = '2'
   const unownedToken = '100'
-  const price = web3.toWei(100, 'ether').toString()
-  const newPrice = web3.toWei(10, 'ether')
-  const initialBalance = web3.toWei(10000, 'ether')
+  const price = web3.utils.toBN(web3.utils.toWei('100', 'ether'))
+  const newPrice = web3.utils.toBN(web3.utils.toWei('10', 'ether'))
+  const initialBalance = web3.utils.toBN(web3.utils.toWei('10000', 'ether'))
   const twoWeeksInSeconds = duration.weeks(2)
   const moreThanSixMonthInSeconds = duration.weeks(26) + duration.seconds(1)
+  const domain = 'Decentraland Bid'
+  const version = '1'
 
   const creationParams = {
     ...fromOwner,
@@ -116,14 +124,16 @@ contract('Bid', function([
       }
     )
     let bidCounter = await bidContract.bidCounterByToken(token.address, tokenId)
-    bidCounter.should.be.bignumber.equal(expectedCounter)
+
+    expect(bidCounter).to.be.eq.BN(expectedCounter)
+
     let bidData = await bidContract.getBidByToken(
       token.address,
       tokenId,
       expetectedIndex
     )
-    bidData[1].should.be.equal(bidder)
-    bidData[2].should.be.bignumber.equal(price)
+    expect(bidData[1]).to.be.equal(bidder)
+    expect(bidData[2]).to.be.eq.BN(price)
   }
 
   async function placeMultipleBidsAndCheck(
@@ -154,7 +164,7 @@ contract('Bid', function([
     token = await Token.new(creationParams)
     composableToken = await ComposableToken.new(creationParams)
     tokenWithoutInterface = await TokenWithoutInterface.new(creationParams)
-    bidContract = await BidContract.new(mana.address, owner, creationParams)
+    bidContract = await BidContract.new(mana.address, owner, 0, creationParams)
 
     await mana.mint(initialBalance, bidder)
     await mana.mint(initialBalance, anotherBidder)
@@ -181,25 +191,90 @@ contract('Bid', function([
         fromBidder
       )
 
-      const [
-        bidId,
-        bidBidder,
-        bidPrice,
-        expiresAt
-      ] = await bidContract.getBidByToken(token.address, tokenOne, 0)
+      const bidData = await bidContract.getBidByToken(
+        token.address,
+        tokenOne,
+        0
+      )
 
-      bidPrice.toString().should.be.equal(price)
-      bidBidder.should.be.equal(bidder)
+      expect(bidData[1]).to.be.equal(bidder)
+      expect(bidData[2]).to.be.eq.BN(price)
 
-      logs.length.should.be.equal(1)
+      expect(logs.length).to.be.equal(1)
+
       assertEvent(logs[0], 'BidCreated', {
-        _id: bidId,
+        _id: bidData[0],
         _tokenAddress: token.address,
         _tokenId: tokenOne,
         _bidder: bidder,
         _price: price,
-        _expiresAt: expiresAt.toString(),
-        _fingerprint: '0x'
+        _expiresAt: bidData[3].toString(),
+        _fingerprint: null
+      })
+    })
+
+    it('should bid an erc721 token :: Relayed EIP721', async function() {
+      const functionSignature = web3.eth.abi.encodeFunctionCall(
+        {
+          inputs: [
+            {
+              internalType: 'address',
+              name: '_tokenAddress',
+              type: 'address'
+            },
+            {
+              internalType: 'uint256',
+              name: '_tokenId',
+              type: 'uint256'
+            },
+            {
+              internalType: 'uint256',
+              name: '_price',
+              type: 'uint256'
+            },
+            {
+              internalType: 'uint256',
+              name: '_duration',
+              type: 'uint256'
+            }
+          ],
+          name: 'placeBid',
+          outputs: [],
+          stateMutability: 'nonpayable',
+          type: 'function'
+        },
+        [token.address, tokenOne, price, twoWeeksInSeconds]
+      )
+
+      const { logs } = await sendMetaTx(
+        bidContract,
+        functionSignature,
+        bidder,
+        relayer,
+        null,
+        domain,
+        version
+      )
+
+      const bidData = await bidContract.getBidByToken(
+        token.address,
+        tokenOne,
+        0
+      )
+
+      expect(bidData[1]).to.be.equal(bidder)
+      expect(bidData[2]).to.be.eq.BN(price)
+
+      expect(logs.length).to.be.equal(2)
+
+      assertEvent(logs[1], 'BidCreated', {
+        _id: bidData[0],
+        _tokenAddress: token.address,
+        _tokenId: tokenOne,
+        _bidder: bidder,
+        _price: price,
+        _expiresAt: bidData[3].toString(),
+        _fingerprint: null
       })
     })
 
@@ -214,31 +289,42 @@ contract('Bid', function([
         fromBidder
       )
 
-      const [
-        bidId,
-        bidBidder,
-        bidPrice,
-        expiresAt
-      ] = await bidContract.getBidByToken(composableToken.address, tokenOne, 0)
+      const bidData = await bidContract.getBidByToken(
+        composableToken.address,
+        tokenOne,
+        0
+      )
 
-      bidPrice.toString().should.be.equal(price)
-      bidBidder.should.be.equal(bidder)
+      expect(bidData[1]).to.be.equal(bidder)
+      expect(bidData[2]).to.be.eq.BN(price)
 
-      logs.length.should.be.equal(1)
+      expect(logs.length).to.be.equal(1)
       assertEvent(logs[0], 'BidCreated', {
-        _id: bidId,
+        _id: bidData[0],
         _tokenAddress: composableToken.address,
         _tokenId: tokenOne,
         _bidder: bidder,
         _price: price,
-        _expiresAt: expiresAt.toString(),
+        _expiresAt: bidData[3].toString(),
         _fingerprint: fingerprint
       })
     })
 
     it('should increment bid counter', async function() {
-      await placeAndCheckBid(tokenOne, bidder, price, 1, 0)
-      await placeAndCheckBid(tokenOne, anotherBidder, price, 2, 1)
+      await placeAndCheckBid(
+        tokenOne,
+        bidder,
+        price,
+        web3.utils.toBN(web3.utils.toBN(1)),
+        web3.utils.toBN(0)
+      )
+      await placeAndCheckBid(
+        tokenOne,
+        anotherBidder,
+        price,
+        web3.utils.toBN(2),
+        web3.utils.toBN(web3.utils.toBN(1))
+      )
     })
 
     it('should re-use bid slot when bidder bid and previously has an active bid', async function() {
@@ -259,20 +345,32 @@ contract('Bid', function([
     })
 
     it('should clean old bid reference when reusing bid slot', async function() {
-      await placeAndCheckBid(tokenOne, bidder, price, 1, 0)
-      await placeAndCheckBid(tokenOne, anotherBidder, price, 2, 1)
+      await placeAndCheckBid(
+        tokenOne,
+        bidder,
+        price,
+        web3.utils.toBN(web3.utils.toBN(1)),
+        web3.utils.toBN(0)
+      )
+      await placeAndCheckBid(
+        tokenOne,
+        anotherBidder,
+        price,
+        web3.utils.toBN(2),
+        web3.utils.toBN(web3.utils.toBN(1))
+      )
       let bid = await bidContract.getBidByToken(token.address, tokenOne, 1)
       let bidIndex = await bidContract.bidIndexByBidId(bid[0])
-      bidIndex.should.be.bignumber.equal(1)
+      expect(bidIndex).to.be.eq.BN(web3.utils.toBN(web3.utils.toBN(1)))
 
       await placeAndCheckBid(tokenOne, anotherBidder, newPrice, 2, 1)
 
       bidIndex = await bidContract.bidIndexByBidId(bid[0])
-      bidIndex.should.be.bignumber.equal(0)
+      expect(bidIndex).to.be.eq.BN(web3.utils.toBN(0))
 
       bid = await bidContract.getBidByToken(token.address, tokenOne, 1)
       bidIndex = await bidContract.bidIndexByBidId(bid[0])
-      bidIndex.should.be.bignumber.equal(1)
+      expect(bidIndex).to.be.eq.BN(web3.utils.toBN(web3.utils.toBN(1)))
     })
 
     it('should bid an erc721 token with fingerprint', async function() {
@@ -446,24 +544,24 @@ contract('Bid', function([
     })
 
     it('should cancel a bid', async function() {
-      const [bidId] = await bidContract.getBidByToken(
+      const bidId = (await bidContract.getBidByToken(
         token.address,
         tokenOne,
         0
-      )
+      ))[0]
 
       let bidCounter = await bidContract.bidCounterByToken(
         token.address,
         tokenOne
       )
-      bidCounter.should.be.bignumber.equal(1)
+      expect(bidCounter).to.be.eq.BN(web3.utils.toBN(1))
 
       const { logs } = await bidContract.cancelBid(
         token.address,
         tokenOne,
         fromBidder
       )
-      logs.length.should.be.equal(1)
+      expect(logs.length).to.be.equal(1)
 
       assertEvent(logs[0], 'BidCancelled', {
         _id: bidId,
@@ -473,7 +571,65 @@ contract('Bid', function([
       })
 
       bidCounter = await bidContract.bidCounterByToken(token.address, tokenOne)
-      bidCounter.should.be.bignumber.equal(0)
+      expect(bidCounter).to.be.eq.BN(0)
+    })
+
+    it('should cancel a bid :: Relayed EIP721', async function() {
+      const bidId = (await bidContract.getBidByToken(
+        token.address,
+        tokenOne,
+        0
+      ))[0]
+
+      let bidCounter = await bidContract.bidCounterByToken(
+        token.address,
+        tokenOne
+      )
+      expect(bidCounter).to.be.eq.BN(web3.utils.toBN(1))
+
+      const functionSignature = web3.eth.abi.encodeFunctionCall(
+        {
+          inputs: [
+            {
+              internalType: 'address',
+              name: '_tokenAddress',
+              type: 'address'
+            },
+            {
+              internalType: 'uint256',
+              name: '_tokenId',
+              type: 'uint256'
+            }
+          ],
+          name: 'cancelBid',
+          outputs: [],
+          stateMutability: 'nonpayable',
+          type: 'function'
+        },
+        [token.address, tokenOne]
+      )
+
+      const { logs } = await sendMetaTx(
+        bidContract,
+        functionSignature,
+        bidder,
+        relayer,
+        null,
+        domain,
+        version
+      )
+
+      expect(logs.length).to.be.equal(2)
+
+      assertEvent(logs[1], 'BidCancelled', {
+        _id: bidId,
+        _tokenAddress: token.address,
+        _tokenId: tokenOne,
+        _bidder: bidder
+      })
+
+      bidCounter = await bidContract.bidCounterByToken(token.address, tokenOne)
+      expect(bidCounter).to.be.eq.BN(0)
     })
 
     it('should cancel a bid in a different order from placed', async function() {
@@ -490,29 +646,29 @@ contract('Bid', function([
         token.address,
         tokenOne
       )
-      bidCounter.should.be.bignumber.equal(2)
+      expect(bidCounter).to.be.eq.BN(2)
 
       let bidData = await bidContract.getBidByToken(token.address, tokenOne, 0)
-      bidData[1].should.be.equal(bidder)
-      bidData[2].should.be.bignumber.equal(price)
+      expect(bidData[1]).to.be.equal(bidder)
+      expect(bidData[2]).to.be.eq.BN(price)
 
       bidData = await bidContract.getBidByToken(token.address, tokenOne, 1)
-      bidData[1].should.be.equal(oneMoreBidder)
-      bidData[2].should.be.bignumber.equal(price)
+      expect(bidData[1]).to.be.equal(oneMoreBidder)
+      expect(bidData[2]).to.be.eq.BN(price)
 
       await bidContract.cancelBid(token.address, tokenOne, fromOneMoreBidder)
 
       bidCounter = await bidContract.bidCounterByToken(token.address, tokenOne)
-      bidCounter.should.be.bignumber.equal(1)
+      expect(bidCounter).to.be.eq.BN(web3.utils.toBN(1))
 
       bidData = await bidContract.getBidByToken(token.address, tokenOne, 0)
-      bidData[1].should.be.equal(bidder)
-      bidData[2].should.be.bignumber.equal(price)
+      expect(bidData[1]).to.be.equal(bidder)
+      expect(bidData[2]).to.be.eq.BN(price)
 
       await bidContract.cancelBid(token.address, tokenOne, fromBidder)
 
       bidCounter = await bidContract.bidCounterByToken(token.address, tokenOne)
-      bidCounter.should.be.bignumber.equal(0)
+      expect(bidCounter).to.be.eq.BN(0)
     })
 
     it('reverts when cancelling invalid bid', async function() {
@@ -553,19 +709,20 @@ contract('Bid', function([
 
     it('should accept a bid for an ERC721', async function() {
       let holderBalance = await mana.balanceOf(holder)
-      holderBalance.should.be.bignumber.equal(0)
+      expect(holderBalance).to.be.eq.BN(0)
 
       let bidderBalance = await mana.balanceOf(bidder)
-      bidderBalance.should.be.bignumber.equal(initialBalance)
+      expect(bidderBalance).to.be.eq.BN(initialBalance)
 
       let ownerOfTokenOne = await token.ownerOf(tokenOne)
       ownerOfTokenOne.should.be.equal(holder)
 
-      const [bidId] = await bidContract.getBidByToken(
+      const bidId = (await bidContract.getBidByToken(
         token.address,
         tokenOne,
         0
-      )
+      ))[0]
+
       await token.safeTransferFromWithBytes(
         holder,
         bidContract.address,
@@ -576,22 +733,111 @@ contract('Bid', function([
 
       const logs = await getEvents(bidContract, 'BidAccepted')
 
-      logs.length.should.be.equal(1)
-      assertEvent(logs[0], 'BidAccepted', {
-        _id: bidId,
-        _tokenAddress: token.address,
-        _tokenId: tokenOne,
-        _bidder: bidder,
-        _seller: holder,
-        _price: price,
-        _fee: '0'
-      })
+      expect(logs.length).to.be.equal(1)
+      assertEvent(
+        { event: logs[0].event, args: logs[0].returnValues },
+        'BidAccepted',
+        {
+          _id: bidId,
+          _tokenAddress: token.address,
+          _tokenId: tokenOne,
+          _bidder: bidder,
+          _seller: holder,
+          _price: price.toString(),
+          _fee: '0'
+        }
+      )
 
       holderBalance = await mana.balanceOf(holder)
-      holderBalance.should.be.bignumber.equal(price)
+      expect(holderBalance).to.be.eq.BN(price)
 
       bidderBalance = await mana.balanceOf(bidder)
-      bidderBalance.should.be.bignumber.equal(initialBalance - price)
+      expect(bidderBalance).to.be.eq.BN(initialBalance.sub(price))
+
+      ownerOfTokenOne = await token.ownerOf(tokenOne)
+      ownerOfTokenOne.should.be.equal(bidder)
+    })
+
+    it('should accept a bid for an ERC721 :: Relayed EIP721', async function() {
+      let holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance).to.be.eq.BN(0)
+
+      let bidderBalance = await mana.balanceOf(bidder)
+      expect(bidderBalance).to.be.eq.BN(initialBalance)
+
+      let ownerOfTokenOne = await token.ownerOf(tokenOne)
+      ownerOfTokenOne.should.be.equal(holder)
+
+      const bidId = (await bidContract.getBidByToken(
+        token.address,
+        tokenOne,
+        0
+      ))[0]
+
+      const functionSignature = web3.eth.abi.encodeFunctionCall(
+        {
+          inputs: [
+            {
+              internalType: 'address',
+              name: 'from',
+              type: 'address'
+            },
+            {
+              internalType: 'address',
+              name: 'to',
+              type: 'address'
+            },
+            {
+              internalType: 'uint256',
+              name: 'tokenId',
+              type: 'uint256'
+            },
+            {
+              internalType: 'bytes',
+              name: '_data',
+              type: 'bytes'
+            }
+          ],
+          name: 'safeTransferFromWithBytes',
+          outputs: [],
+          stateMutability: 'nonpayable',
+          type: 'function'
+        },
+        [holder, bidContract.address, tokenOne, bidId]
+      )
+
+      await sendMetaTx(
+        token,
+        functionSignature,
+        holder,
+        relayer,
+        null,
+        'Decentraland Token',
+        '1'
+      )
+
+      const logs = await getEvents(bidContract, 'BidAccepted')
+
+      expect(logs.length).to.be.equal(1)
+      assertEvent(
+        { event: logs[0].event, args: logs[0].returnValues },
+        'BidAccepted',
+        {
+          _id: bidId,
+          _tokenAddress: token.address,
+          _tokenId: tokenOne,
+          _bidder: bidder,
+          _seller: holder,
+          _price: price.toString(),
+          _fee: '0'
+        }
+      )
+
+      holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance).to.be.eq.BN(price)
+
+      bidderBalance = await mana.balanceOf(bidder)
+      expect(bidderBalance).to.be.eq.BN(initialBalance.sub(price))
 
       ownerOfTokenOne = await token.ownerOf(tokenOne)
       ownerOfTokenOne.should.be.equal(bidder)
@@ -599,19 +845,20 @@ contract('Bid', function([
 
     it('should accept a bid for a composable ERC721', async function() {
       let holderBalance = await mana.balanceOf(holder)
-      holderBalance.should.be.bignumber.equal(0)
+      expect(holderBalance).to.be.eq.BN(0)
 
       let bidderBalance = await mana.balanceOf(bidder)
-      bidderBalance.should.be.bignumber.equal(initialBalance)
+      expect(bidderBalance).to.be.eq.BN(initialBalance)
 
       let ownerOfTokenOne = await composableToken.ownerOf(tokenOne)
       ownerOfTokenOne.should.be.equal(holder)
 
-      const [bidId] = await bidContract.getBidByToken(
+      const bidId = (await bidContract.getBidByToken(
         composableToken.address,
         tokenOne,
         0
-      )
+      ))[0]
+
       await composableToken.safeTransferFromWithBytes(
         holder,
         bidContract.address,
@@ -622,21 +869,25 @@ contract('Bid', function([
 
       const logs = await getEvents(bidContract, 'BidAccepted')
 
-      logs.length.should.be.equal(1)
-      assertEvent(logs[0], 'BidAccepted', {
-        _id: bidId,
-        _tokenAddress: composableToken.address,
-        _tokenId: tokenOne,
-        _bidder: bidder,
-        _seller: holder,
-        _price: price
-      })
+      expect(logs.length).to.be.equal(1)
+      assertEvent(
+        { event: logs[0].event, args: logs[0].returnValues },
+        'BidAccepted',
+        {
+          _id: bidId,
+          _tokenAddress: composableToken.address,
+          _tokenId: tokenOne,
+          _bidder: bidder,
+          _seller: holder,
+          _price: price.toString()
+        }
+      )
 
       holderBalance = await mana.balanceOf(holder)
-      holderBalance.should.be.bignumber.equal(price)
+      expect(holderBalance).to.be.eq.BN(price)
 
       bidderBalance = await mana.balanceOf(bidder)
-      bidderBalance.should.be.bignumber.equal(initialBalance - price)
+      expect(bidderBalance).to.be.eq.BN(initialBalance.sub(price))
 
       ownerOfTokenOne = await composableToken.ownerOf(tokenOne)
       ownerOfTokenOne.should.be.equal(bidder)
@@ -650,17 +901,17 @@ contract('Bid', function([
         [0, 1, 2]
       )
 
-      const [firstBidId] = await bidContract.getBidByToken(
+      const firstBidId = (await bidContract.getBidByToken(
         token.address,
         tokenOne,
         0
-      )
+      ))[0]
 
-      const [secondBidId] = await bidContract.getBidByToken(
+      const secondBidId = (await bidContract.getBidByToken(
         token.address,
         tokenOne,
         1
-      )
+      ))[0]
 
       await token.safeTransferFromWithBytes(
         holder,
@@ -674,7 +925,7 @@ contract('Bid', function([
         token.address,
         tokenOne
       )
-      bidCounter.should.be.bignumber.equal(0)
+      expect(bidCounter).to.be.eq.BN(0)
 
       let tokenOwner = await token.ownerOf(tokenOne)
       tokenOwner.should.be.equal(anotherBidder)
@@ -710,13 +961,17 @@ contract('Bid', function([
         [0, 1, 2]
       )
 
-      let [firstBidId] = await bidContract.getBidByToken(
+      let firstBidId = (await bidContract.getBidByToken(
         token.address,
         tokenOne,
         0
-      )
+      ))[0]
 
-      let [bidId] = await bidContract.getBidByToken(token.address, tokenOne, 1)
+      let bidId = (await bidContract.getBidByToken(
+        token.address,
+        tokenOne,
+        1
+      ))[0]
 
       // Accept bid for tokenOne
       await token.safeTransferFromWithBytes(
@@ -740,7 +995,7 @@ contract('Bid', function([
         token.address,
         tokenOne
       )
-      bidCounter.should.be.bignumber.equal(0)
+      expect(bidCounter).to.be.eq.BN(0)
 
       await assertRevert(
         bidContract.getBidByToken(token.address, tokenOne, 0),
@@ -782,15 +1037,16 @@ contract('Bid', function([
 
       // Check that remaining bids for tokenOne are invalid
       bidCounter = await bidContract.bidCounterByToken(token.address, tokenOne)
-      bidCounter.should.be.bignumber.equal(0)
+      expect(bidCounter).to.be.eq.BN(0)
     })
 
     it('reverts when accepting invalid tokenId', async function() {
-      const [bidId] = await bidContract.getBidByToken(
+      const bidId = (await bidContract.getBidByToken(
         token.address,
         tokenOne,
         0
-      )
+      ))[0]
+
       await assertRevert(
         token.safeTransferFromWithBytes(
           holder,
@@ -803,11 +1059,11 @@ contract('Bid', function([
     })
 
     it('reverts when accepting invalid bidId', async function() {
-      const [bidId] = await bidContract.getBidByToken(
+      const bidId = (await bidContract.getBidByToken(
         token.address,
         tokenOne,
         0
-      )
+      ))[0]
 
       await bidContract.cancelBid(token.address, tokenOne, fromBidder)
 
@@ -823,11 +1079,11 @@ contract('Bid', function([
     })
 
     it('reverts when accepting with insufficient funds', async function() {
-      const [bidId] = await bidContract.getBidByToken(
+      const bidId = (await bidContract.getBidByToken(
         token.address,
         tokenOne,
         0
-      )
+      ))[0]
 
       await mana.transfer(holder, initialBalance, fromBidder)
 
@@ -843,11 +1099,11 @@ contract('Bid', function([
     })
 
     it('reverts when accepting without approved contract', async function() {
-      const [bidId] = await bidContract.getBidByToken(
+      const bidId = (await bidContract.getBidByToken(
         token.address,
         tokenOne,
         0
-      )
+      ))[0]
 
       await mana.approve(bidContract.address, 0, fromBidder)
 
@@ -863,11 +1119,11 @@ contract('Bid', function([
     })
 
     it('reverts when accepting bid for another token with the same index and id', async function() {
-      const [bidId] = await bidContract.getBidByToken(
+      const bidId = (await bidContract.getBidByToken(
         composableToken.address,
         tokenOne,
         0
-      )
+      ))[0]
 
       await assertRevert(
         token.safeTransferFromWithBytes(
@@ -883,11 +1139,12 @@ contract('Bid', function([
     it('reverts when accepting an expired bid', async function() {
       await increaseTime(twoWeeksInSeconds + duration.minutes(1))
 
-      const [bidId] = await bidContract.getBidByToken(
+      const bidId = (await bidContract.getBidByToken(
         token.address,
         tokenOne,
         0
-      )
+      ))[0]
+
       await assertRevert(
         token.safeTransferFromWithBytes(
           holder,
@@ -900,11 +1157,11 @@ contract('Bid', function([
     })
 
     it('reverts when accepting with fingerprint changed', async function() {
-      const [bidId] = await bidContract.getBidByToken(
+      const bidId = (await bidContract.getBidByToken(
         composableToken.address,
         tokenOne,
         0
-      )
+      ))[0]
 
       await composableToken.setFingerprint(tokenOne, 2)
 
@@ -923,13 +1180,13 @@ contract('Bid', function([
   describe('Share sale', function() {
     it('should share sale', async function() {
       let bidderBalance = await mana.balanceOf(bidder)
-      bidderBalance.should.be.bignumber.equal(initialBalance)
+      expect(bidderBalance).to.be.eq.BN(initialBalance)
 
       let holderBalance = await mana.balanceOf(holder)
-      holderBalance.should.be.bignumber.equal(0)
+      expect(holderBalance).to.be.eq.BN(0)
 
       let ownerBalance = await mana.balanceOf(owner)
-      ownerBalance.should.be.bignumber.equal(0)
+      expect(ownerBalance).to.be.eq.BN(0)
 
       // Set 10% of bid price
       await bidContract.setOwnerCutPerMillion(100000, fromOwner)
@@ -942,11 +1199,11 @@ contract('Bid', function([
         fromBidder
       )
 
-      const [bidId] = await bidContract.getBidByToken(
+      const bidId = (await bidContract.getBidByToken(
         token.address,
         tokenOne,
         0
-      )
+      ))[0]
 
       await token.safeTransferFromWithBytes(
         holder,
@@ -956,45 +1213,51 @@ contract('Bid', function([
         fromHolder
       )
 
-      const bidPrice = parseInt(price)
+      const bidPrice = parseInt(price.toString())
 
       const logs = await getEvents(bidContract, 'BidAccepted')
 
-      logs.length.should.be.equal(1)
-      assertEvent(logs[0], 'BidAccepted', {
-        _id: bidId,
-        _tokenAddress: token.address,
-        _tokenId: tokenOne,
-        _bidder: bidder,
-        _seller: holder,
-        _price: price,
-        _fee: (bidPrice * 0.1).toString()
-      })
+      expect(logs.length).to.be.equal(1)
+      assertEvent(
+        { event: logs[0].event, args: logs[0].returnValues },
+        'BidAccepted',
+        {
+          _id: bidId,
+          _tokenAddress: token.address,
+          _tokenId: tokenOne,
+          _bidder: bidder,
+          _seller: holder,
+          _price: price.toString(),
+          _fee: (bidPrice * 0.1).toString()
+        }
+      )
 
       bidderBalance = await mana.balanceOf(bidder)
 
-      scientificToDecimal(bidderBalance).should.be.equal(
-        scientificToDecimal(initialBalance - bidPrice)
+      scientificToDecimal(bidderBalance.toString()).should.be.equal(
+        scientificToDecimal(initialBalance.toString() - bidPrice)
       )
 
       holderBalance = await mana.balanceOf(holder)
-      holderBalance.should.be.bignumber.equal(bidPrice - bidPrice * 0.1)
+      expect(holderBalance.toString()).to.be.equal(
+        (bidPrice - bidPrice * 0.1).toString()
+      )
 
       ownerBalance = await mana.balanceOf(owner)
-      ownerBalance.should.be.bignumber.equal(bidPrice * 0.1)
+      expect(ownerBalance.toString()).to.be.equal((bidPrice * 0.1).toString())
     })
 
     it('should set to 0', async function() {
       let ownerCut = await bidContract.ownerCutPerMillion()
-      ownerCut.should.be.bignumber.equal(0)
+      expect(ownerCut).to.be.eq.BN(0)
 
       await bidContract.setOwnerCutPerMillion(10000, fromOwner)
       ownerCut = await bidContract.ownerCutPerMillion()
-      ownerCut.should.be.bignumber.equal(10000)
+      expect(ownerCut).to.be.eq.BN(web3.utils.toBN(10000))
 
       await bidContract.setOwnerCutPerMillion(0, fromOwner)
       ownerCut = await bidContract.ownerCutPerMillion()
-      ownerCut.should.be.bignumber.equal(0)
+      expect(ownerCut).to.be.eq.BN(0)
     })
 
     it('reverts when calling by hacker', async function() {
@@ -1022,11 +1285,11 @@ contract('Bid', function([
         fromBidder
       )
 
-      const [bidId] = await bidContract.getBidByToken(
+      const bidId = (await bidContract.getBidByToken(
         token.address,
         tokenOne,
         0
-      )
+      ))[0]
 
       await bidContract.pause(fromOwner)
 
@@ -1040,11 +1303,13 @@ contract('Bid', function([
           price,
           twoWeeksInSeconds,
           fromBidder
-        )
+        ),
+        'Pausable: paused'
       )
 
       await assertRevert(
-        bidContract.cancelBid(token.address, tokenOne, fromBidder)
+        bidContract.cancelBid(token.address, tokenOne, fromBidder),
+        'Pausable: paused'
       )
 
       await assertRevert(
@@ -1054,7 +1319,78 @@ contract('Bid', function([
           tokenOne,
           bidId,
           fromHolder
-        )
+        ),
+        'Pausable: paused'
+      )
+    })
+
+    it('should be paused by the owner :: Relayed EIP721', async function() {
+      let isPaused = await bidContract.paused()
+      isPaused.should.be.equal(false)
+
+      await bidContract.placeBid(
+        token.address,
+        tokenOne,
+        price,
+        twoWeeksInSeconds,
+        fromBidder
+      )
+
+      const bidId = (await bidContract.getBidByToken(
+        token.address,
+        tokenOne,
+        0
+      ))[0]
+
+      const functionSignature = web3.eth.abi.encodeFunctionCall(
+        {
+          inputs: [],
+          name: 'pause',
+          outputs: [],
+          stateMutability: 'nonpayable',
+          type: 'function'
+        },
+        []
+      )
+
+      await sendMetaTx(
+        bidContract,
+        functionSignature,
+        owner,
+        relayer,
+        null,
+        domain,
+        version
+      )
+
+      isPaused = await bidContract.paused()
+      isPaused.should.be.equal(true)
+
+      await assertRevert(
+        bidContract.placeBid(
+          token.address,
+          tokenOne,
+          price,
+          twoWeeksInSeconds,
+          fromBidder
+        ),
+        'Pausable: paused'
+      )
+
+      await assertRevert(
+        bidContract.cancelBid(token.address, tokenOne, fromBidder),
+        'Pausable: paused'
+      )
+
+      await assertRevert(
+        token.safeTransferFromWithBytes(
+          holder,
+          bidContract.address,
+          tokenOne,
+          bidId,
+          fromHolder
+        ),
+        'Pausable: paused'
       )
     })
 
@@ -1075,17 +1411,17 @@ contract('Bid', function([
     })
 
     it('should remove an expired bid by bidder', async function() {
-      const [bidId] = await bidContract.getBidByToken(
+      const bidId = (await bidContract.getBidByToken(
         token.address,
         tokenOne,
         0
-      )
+      ))[0]
 
       let bidCounter = await bidContract.bidCounterByToken(
         token.address,
         tokenOne
       )
-      bidCounter.should.be.bignumber.equal(1)
+      expect(bidCounter).to.be.eq.BN(web3.utils.toBN(1))
 
       await increaseTime(twoWeeksInSeconds + duration.minutes(1))
 
@@ -1095,7 +1431,7 @@ contract('Bid', function([
         [bidder],
         fromBidder
       )
-      logs.length.should.be.equal(1)
+      expect(logs.length).to.be.equal(1)
 
       assertEvent(logs[0], 'BidCancelled', {
         _id: bidId,
@@ -1105,21 +1441,86 @@ contract('Bid', function([
       })
 
       bidCounter = await bidContract.bidCounterByToken(token.address, tokenOne)
-      bidCounter.should.be.bignumber.equal(0)
+      expect(bidCounter).to.be.eq.BN(0)
     })
 
-    it('should remove an expired bid by anyone', async function() {
-      const [bidId] = await bidContract.getBidByToken(
+    it('should remove an expired bid by bidder :: Relayed EIP721', async function() {
+      const bidId = (await bidContract.getBidByToken(
         token.address,
         tokenOne,
         0
-      )
+      ))[0]
 
       let bidCounter = await bidContract.bidCounterByToken(
         token.address,
         tokenOne
       )
-      bidCounter.should.be.bignumber.equal(1)
+      expect(bidCounter).to.be.eq.BN(web3.utils.toBN(1))
+
+      await increaseTime(twoWeeksInSeconds + duration.minutes(1))
+
+      const functionSignature = web3.eth.abi.encodeFunctionCall(
+        {
+          inputs: [
+            {
+              internalType: 'address[]',
+              name: '_tokenAddresses',
+              type: 'address[]'
+            },
+            {
+              internalType: 'uint256[]',
+              name: '_tokenIds',
+              type: 'uint256[]'
+            },
+            {
+              internalType: 'address[]',
+              name: '_bidders',
+              type: 'address[]'
+            }
+          ],
+          name: 'removeExpiredBids',
+          outputs: [],
+          stateMutability: 'nonpayable',
+          type: 'function'
+        },
+        [[token.address], [tokenOne], [bidder]]
+      )
+
+      const { logs } = await sendMetaTx(
+        bidContract,
+        functionSignature,
+        owner,
+        relayer,
+        null,
+        domain,
+        version
+      )
+
+      expect(logs.length).to.be.equal(2)
+
+      assertEvent(logs[1], 'BidCancelled', {
+        _id: bidId,
+        _tokenAddress: token.address,
+        _tokenId: tokenOne,
+        _bidder: bidder
+      })
+
+      bidCounter = await bidContract.bidCounterByToken(token.address, tokenOne)
+      expect(bidCounter).to.be.eq.BN(0)
+    })
+
+    it('should remove an expired bid by anyone', async function() {
+      const bidId = (await bidContract.getBidByToken(
+        token.address,
+        tokenOne,
+        0
+      ))[0]
+
+      let bidCounter = await bidContract.bidCounterByToken(
+        token.address,
+        tokenOne
+      )
+      expect(bidCounter).to.be.eq.BN(web3.utils.toBN(1))
 
       await increaseTime(twoWeeksInSeconds + duration.minutes(1))
 
@@ -1129,7 +1530,7 @@ contract('Bid', function([
         [bidder],
         fromAnotherBidder
       )
-      logs.length.should.be.equal(1)
+      expect(logs.length).to.be.equal(1)
 
       assertEvent(logs[0], 'BidCancelled', {
         _id: bidId,
@@ -1139,7 +1540,7 @@ contract('Bid', function([
       })
 
       bidCounter = await bidContract.bidCounterByToken(token.address, tokenOne)
-      bidCounter.should.be.bignumber.equal(0)
+      expect(bidCounter).to.be.eq.BN(0)
     })
 
     it('should remove an expired bid in the middle', async function() {
@@ -1163,15 +1564,15 @@ contract('Bid', function([
         token.address,
         tokenOne
       )
-      bidCounter.should.be.bignumber.equal(2)
+      expect(bidCounter).to.be.eq.BN(2)
 
       let bidData = await bidContract.getBidByToken(token.address, tokenOne, 0)
       bidData[1].should.be.equal(bidder)
-      bidData[2].should.be.bignumber.equal(price)
+      expect(bidData[2]).to.be.eq.BN(price)
 
       bidData = await bidContract.getBidByToken(token.address, tokenOne, 1)
       bidData[1].should.be.equal(oneMoreBidder)
-      bidData[2].should.be.bignumber.equal(price)
+      expect(bidData[2]).to.be.eq.BN(price)
     })
 
     it('should remove expired bids', async function() {
@@ -1182,11 +1583,15 @@ contract('Bid', function([
         [0, 1, 2]
       )
 
-      const [[bidId1], [bidId2], [bidId3]] = await Promise.all([
+      const [bid1, bid2, bid3] = await Promise.all([
         bidContract.getBidByToken(token.address, tokenOne, 0),
         bidContract.getBidByToken(token.address, tokenOne, 1),
         bidContract.getBidByToken(token.address, tokenOne, 2)
       ])
+
+      const bidId1 = bid1[0]
+      const bidId2 = bid2[0]
+      const bidId3 = bid3[0]
 
       await increaseTime(twoWeeksInSeconds + duration.minutes(1))
 
@@ -1197,7 +1602,7 @@ contract('Bid', function([
         fromAnotherBidder
       )
 
-      logs.length.should.be.equal(3)
+      expect(logs.length).to.be.equal(3)
 
       assertEvent(logs[0], 'BidCancelled', {
         _id: bidId3,
@@ -1322,10 +1727,13 @@ contract('Bid', function([
         [0, 1, 2]
       )
 
-      const [[tokenOneBid2], [tokenOneBid3]] = await Promise.all([
+      const [res1, res2] = await Promise.all([
         bidContract.getBidByToken(token.address, tokenOne, 1),
         bidContract.getBidByToken(token.address, tokenOne, 2)
       ])
+
+      const tokenOneBid2 = res1[0]
+      const tokenOneBid3 = res2[0]
 
       await placeMultipleBidsAndCheck(
         tokenTwo,
@@ -1334,10 +1742,12 @@ contract('Bid', function([
         [0, 1, 2]
       )
 
-      const [[tokenTwoBid1], [tokenTwoBid3]] = await Promise.all([
+      const [resTokenTwoBid1, resTokenTwoBid3] = await Promise.all([
         bidContract.getBidByToken(token.address, tokenTwo, 0),
         bidContract.getBidByToken(token.address, tokenTwo, 2)
       ])
+      const tokenTwoBid1 = resTokenTwoBid1[0]
+      const tokenTwoBid3 = resTokenTwoBid3[0]
 
       console.log('----- Cancel first tokenOne bid -----')
       await bidContract.cancelBid(token.address, tokenOne, fromBidder)
@@ -1352,7 +1762,7 @@ contract('Bid', function([
         tokenOne,
         anotherBidder
       )
-      bid[0].should.be.bignumber.equal(1)
+      expect(bid[0]).to.be.eq.BN(web3.utils.toBN(1))
       bid[1].should.be.equal(tokenOneBid2)
 
       bid = await bidContract.getBidByBidder(
@@ -1360,7 +1770,7 @@ contract('Bid', function([
         tokenOne,
         oneMoreBidder
       )
-      bid[0].should.be.bignumber.equal(0)
+      expect(bid[0]).to.be.eq.BN(0)
       bid[1].should.be.equal(tokenOneBid3)
 
       console.log('----- Accept third bid placed for tokenOne -----')
@@ -1377,7 +1787,7 @@ contract('Bid', function([
         token.address,
         tokenOne
       )
-      bidCounter.should.be.bignumber.equal(0)
+      expect(bidCounter).to.be.eq.BN(0)
       await assertRevert(
         bidContract.getBidByToken(token.address, tokenOne, 0),
         'Invalid index'
@@ -1387,7 +1797,7 @@ contract('Bid', function([
       await bidContract.cancelBid(token.address, tokenTwo, fromAnotherBidder)
 
       bid = await bidContract.getBidByBidder(token.address, tokenTwo, bidder)
-      bid[0].should.be.bignumber.equal(0)
+      expect(bid[0]).to.be.eq.BN(0)
       bid[1].should.be.equal(tokenTwoBid1)
 
       bid = await bidContract.getBidByBidder(
@@ -1395,7 +1805,7 @@ contract('Bid', function([
         tokenTwo,
         oneMoreBidder
       )
-      bid[0].should.be.bignumber.equal(1)
+      expect(bid[0]).to.be.eq.BN(web3.utils.toBN(1))
       bid[1].should.be.equal(tokenTwoBid3)
 
       console.log('----- Accept third bid placed for tokenTwo -----')
@@ -1409,7 +1819,7 @@ contract('Bid', function([
 
       console.log('----- Check counter for tokenOne -----')
       bidCounter = await bidContract.bidCounterByToken(token.address, tokenTwo)
-      bidCounter.should.be.bignumber.equal(0)
+      expect(bidCounter).to.be.eq.BN(0)
       await assertRevert(
         bidContract.getBidByToken(token.address, tokenTwo, 0),
         'Invalid index'
@@ -1431,18 +1841,19 @@ contract('Bid', function([
         [0, 1, 2]
       )
 
-      const [tokenOneBid1] = await bidContract.getBidByToken(
+      const resTokenOneBid1 = await bidContract.getBidByToken(
         token.address,
         tokenOne,
         0
       )
+      const tokenOneBid1 = resTokenOneBid1[0]
 
       console.log('----- Cancel second and third tokenOne bid -----')
       await bidContract.cancelBid(token.address, tokenOne, fromOneMoreBidder)
       await bidContract.cancelBid(token.address, tokenOne, fromAnotherBidder)
 
       bid = await bidContract.getBidByBidder(token.address, tokenOne, bidder)
-      bid[0].should.be.bignumber.equal(0)
+      expect(bid[0]).to.be.eq.BN(0)
       bid[1].should.be.equal(tokenOneBid1)
 
       console.log('----- Accept first bid placed for tokenOne -----')
@@ -1465,11 +1876,13 @@ contract('Bid', function([
         [0, 1, 2]
       )
 
-      const [tokenOneBid4] = await bidContract.getBidByToken(
+      const resTokenOneBid4 = await bidContract.getBidByToken(
         token.address,
         tokenOne,
         2
       )
+
+      const tokenOneBid4 = resTokenOneBid4[0]
 
       console.log('----- Cancel second and first tokenOne bid -----')
       await bidContract.cancelBid(token.address, tokenOne, fromAnotherBidder)
@@ -1490,7 +1903,7 @@ contract('Bid', function([
         tokenOne,
         oneMoreBidder
       )
-      bid[0].should.be.bignumber.equal(0)
+      expect(bid[0]).to.be.eq.BN(0)
       bid[1].should.be.equal(tokenOneBid4)
 
       console.log('----- Accept third bid placed for tokenOne -----')
@@ -1518,11 +1931,13 @@ contract('Bid', function([
         [0, 1, 2]
       )
 
-      const [tokenOneBid5] = await bidContract.getBidByToken(
+      const resTokenOneBid5 = await bidContract.getBidByToken(
         token.address,
         tokenOne,
         1
       )
+
+      const tokenOneBid5 = resTokenOneBid5[0]
 
       console.log('----- Cancel first and third tokenOne bid -----')
       await bidContract.cancelBid(token.address, tokenOne, fromBidder)
@@ -1543,7 +1958,7 @@ contract('Bid', function([
         tokenOne,
         anotherBidder
       )
-      bid[0].should.be.bignumber.equal(0)
+      expect(bid[0]).to.be.eq.BN(0)
       bid[1].should.be.equal(tokenOneBid5)
 
       console.log('----- Accept second bid placed for tokenOne -----')

@@ -1,6 +1,8 @@
-pragma solidity ^0.4.24;
+// SPDX-License-Identifier: MIT
 
-import "openzeppelin-solidity/contracts/token/ERC721/ERC721.sol";
+pragma solidity ^0.7.6;
+
+import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 
 
 contract ComposableToken is ERC721 {
@@ -8,7 +10,7 @@ contract ComposableToken is ERC721 {
     bytes4 public constant ERC721_Interface = 0x80ac58cd;
     mapping(uint256 => bytes32) public fingerprints;
 
-    constructor() ERC721() public {}
+    constructor() ERC721("name", "symbol") {}
 
     function mint(address _to, uint256 _id) external {
         super._mint(_to, _id);
@@ -45,7 +47,7 @@ contract ComposableToken is ERC721 {
         return bidId;
     }
 
-    function supportsInterface(bytes4 _interfaceId) external view returns (bool) {
+    function supportsInterface(bytes4 _interfaceId) public override pure returns (bool) {
         return _interfaceId == ERC721Composable_ValidateFingerprint ||
         _interfaceId == ERC721_Interface;
     }
@@ -54,16 +56,16 @@ contract ComposableToken is ERC721 {
         address from,
         address to,
         uint256 tokenId,
-        bytes _data
+        bytes memory _data
      )
-     public 
+     public
      {
         super.safeTransferFrom(
             from,
-            to, 
+            to,
             tokenId,
             _data
         );
     }
-    
+
 }

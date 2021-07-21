@@ -1,13 +1,18 @@
-pragma solidity ^0.4.24;
+// SPDX-License-Identifier: MIT
 
-import "openzeppelin-solidity/contracts/ownership/Ownable.sol";
-import "openzeppelin-solidity/contracts/lifecycle/Pausable.sol";
-import "openzeppelin-solidity/contracts/math/SafeMath.sol";
-import "openzeppelin-solidity/contracts/utils/Address.sol";
+pragma solidity ^0.7.6;
+
+import "@openzeppelin/contracts/math/SafeMath.sol";
+import "@openzeppelin/contracts/utils/Address.sol";
+
+import "../commons/Ownable.sol";
+import "../commons/Pausable.sol";
+import "../commons/ContextMixin.sol";
+import "../commons/NativeMetaTransaction.sol";
 import "./ERC721BidStorage.sol";
 
 
-contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
+contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction {
     using SafeMath for uint256;
     using Address for address;
 
@@ -16,7 +21,13 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     * @param _manaToken - address of the mana token
     * @param _owner - address of the owner for the contract
     */
-    constructor(address _manaToken, address _owner) Ownable() Pausable() public {
+    constructor(address _manaToken, address _owner, uint256 _ownerCutPerMillion) Ownable() Pausable() {
+         // EIP712 init
+        _initializeEIP712('Decentraland Bid', '1');
+
+         // Fee init
+        setOwnerCutPerMillion(_ownerCutPerMillion);
+
         manaToken = ERC20Interface(_manaToken);
         // Set owner
         transferOwnership(_owner);
@@ -30,7 +41,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     * @param _duration - uint256 of the duration in seconds for the bid
     */
     function placeBid(
-        address _tokenAddress, 
+        address _tokenAddress,
         uint256 _tokenId,
         uint256 _price,
         uint256 _duration
@@ -38,7 +49,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
         public
     {
         _placeBid(
-            _tokenAddress, 
+            _tokenAddress,
             _tokenId,
             _price,
             _duration,
@@ -52,23 +63,23 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     * @param _tokenId - uint256 of the token id
     * @param _price - uint256 of the price for the bid
     * @param _duration - uint256 of the duration in seconds for the bid
-    * @param _fingerprint - bytes of ERC721 token fingerprint 
+    * @param _fingerprint - bytes of ERC721 token fingerprint
     */
     function placeBid(
-        address _tokenAddress, 
+        address _tokenAddress,
         uint256 _tokenId,
         uint256 _price,
         uint256 _duration,
-        bytes _fingerprint
+        bytes memory _fingerprint
     )
         public
     {
         _placeBid(
-            _tokenAddress, 
+            _tokenAddress,
             _tokenId,
             _price,
             _duration,
-            _fingerprint 
+            _fingerprint
         );
     }
 
@@ -82,10 +93,10 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     * @param _tokenId - uint256 of the token id
     * @param _price - uint256 of the price for the bid
     * @param _duration - uint256 of the duration in seconds for the bid
-    * @param _fingerprint - bytes of ERC721 token fingerprint 
+    * @param _fingerprint - bytes of ERC721 token fingerprint
     */
     function _placeBid(
-        address _tokenAddress, 
+        address _tokenAddress,
         uint256 _tokenId,
         uint256 _price,
         uint256 _duration,
@@ -96,25 +107,26 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     {
         _requireERC721(_tokenAddress);
         _requireComposableERC721(_tokenAddress, _tokenId, _fingerprint);
+        address sender = _msgSender();
 
         require(_price > 0, "Price should be bigger than 0");
 
-        _requireBidderBalance(msg.sender, _price);       
+        _requireBidderBalance(sender, _price);
 
         require(
-            _duration >= MIN_BID_DURATION, 
+            _duration >= MIN_BID_DURATION,
             "The bid should be last longer than a minute"
         );
 
         require(
-            _duration <= MAX_BID_DURATION, 
+            _duration <= MAX_BID_DURATION,
             "The bid can not last longer than 6 months"
         );
 
         ERC721Interface token = ERC721Interface(_tokenAddress);
         address tokenOwner = token.ownerOf(_tokenId);
         require(
-            tokenOwner != address(0) && tokenOwner != msg.sender,
+            tokenOwner != address(0) && tokenOwner != sender,
             "The token should have an owner different from the sender"
         );
 
@@ -123,7 +135,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
         bytes32 bidId = keccak256(
             abi.encodePacked(
                 block.timestamp,
-                msg.sender,
+                sender,
                 _tokenAddress,
                 _tokenId,
                 _price,
@@ -134,27 +146,27 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
 
         uint256 bidIndex;
 
-        if (_bidderHasABid(_tokenAddress, _tokenId, msg.sender)) {
+        if (_bidderHasABid(_tokenAddress, _tokenId, sender)) {
             bytes32 oldBidId;
-            (bidIndex, oldBidId,,,) = getBidByBidder(_tokenAddress, _tokenId, msg.sender);
-            
+            (bidIndex, oldBidId,,,) = getBidByBidder(_tokenAddress, _tokenId, sender);
+
             // Delete old bid reference
             delete bidIndexByBidId[oldBidId];
         } else {
-            // Use the bid counter to assign the index if there is not an active bid. 
-            bidIndex = bidCounterByToken[_tokenAddress][_tokenId];  
-            // Increase bid counter 
+            // Use the bid counter to assign the index if there is not an active bid.
+            bidIndex = bidCounterByToken[_tokenAddress][_tokenId];
+            // Increase bid counter
             bidCounterByToken[_tokenAddress][_tokenId]++;
         }
 
         // Set bid references
-        bidIdByTokenAndBidder[_tokenAddress][_tokenId][msg.sender] = bidId;
+        bidIdByTokenAndBidder[_tokenAddress][_tokenId][sender] = bidId;
         bidIndexByBidId[bidId] = bidIndex;
 
         // Save Bid
         bidsByToken[_tokenAddress][_tokenId][bidIndex] = Bid({
             id: bidId,
-            bidder: msg.sender,
+            bidder: sender,
             tokenAddress: _tokenAddress,
             tokenId: _tokenId,
             price: _price,
@@ -166,22 +178,22 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
             bidId,
             _tokenAddress,
             _tokenId,
-            msg.sender,
+            sender,
             _price,
             expiresAt,
-            _fingerprint     
+            _fingerprint
         );
     }
 
     /**
-    * @dev Used as the only way to accept a bid. 
+    * @dev Used as the only way to accept a bid.
     * The token owner should send the token to this contract using safeTransferFrom.
     * The last parameter (bytes) should be the bid id.
     * @notice  The ERC721 smart contract calls this function on the recipient
     * after a `safetransfer`. This function MAY throw to revert and reject the
     * transfer. Return of other than the magic value MUST result in the
     * transaction being reverted.
-    * Note: 
+    * Note:
     * Contract address is always the message sender.
     * This method should be seen as 'acceptBid'.
     * It validates that the bid id matches an active bid for the bid token.
@@ -209,13 +221,13 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
         require(
             // solium-disable-next-line operator-whitespace
             bid.id == bidId &&
-            bid.expiresAt >= block.timestamp, 
+            bid.expiresAt >= block.timestamp,
             "Invalid bid"
         );
 
         address bidder = bid.bidder;
         uint256 price = bid.price;
-        
+
         // Check fingerprint if necessary
         _requireComposableERC721(msg.sender, _tokenId, bid.fingerprint);
 
@@ -229,7 +241,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
 
         // Reset bid counter to invalidate other bids placed for the token
         delete bidCounterByToken[msg.sender][_tokenId];
-        
+
         // Transfer token to bidder
         ERC721Interface(msg.sender).transferFrom(address(this), bidder, _tokenId);
 
@@ -249,7 +261,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
             manaToken.transferFrom(bidder, _from, price.sub(saleShareAmount)),
             "Transfering MANA to owner failed"
         );
-       
+
         emit BidAccepted(
             bidId,
             msg.sender,
@@ -269,8 +281,8 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     * @param _tokenIds - uint256[] of the token ids
     * @param _bidders - address[] of the bidders
     */
-    function removeExpiredBids(address[] _tokenAddresses, uint256[] _tokenIds, address[] _bidders)
-    public 
+    function removeExpiredBids(address[] memory _tokenAddresses, uint256[] memory _tokenIds, address[] memory _bidders)
+    public
     {
         uint256 loopLength = _tokenAddresses.length;
 
@@ -281,7 +293,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
             _removeExpiredBid(_tokenAddresses[i], _tokenIds[i], _bidders[i]);
         }
     }
-    
+
     /**
     * @dev Remove expired bid
     * @param _tokenAddress - address of the ERC721 token
@@ -289,21 +301,21 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     * @param _bidder - address of the bidder
     */
     function _removeExpiredBid(address _tokenAddress, uint256 _tokenId, address _bidder)
-    internal 
+    internal
     {
         (uint256 bidIndex, bytes32 bidId,,,uint256 expiresAt) = getBidByBidder(
-            _tokenAddress, 
+            _tokenAddress,
             _tokenId,
             _bidder
         );
-        
+
         require(expiresAt < block.timestamp, "The bid to remove should be expired");
 
         _cancelBid(
-            bidIndex, 
-            bidId, 
-            _tokenAddress, 
-            _tokenId, 
+            bidIndex,
+            bidId,
+            _tokenAddress,
+            _tokenId,
             _bidder
         );
     }
@@ -314,19 +326,20 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     * @param _tokenId - uint256 of the token id
     */
     function cancelBid(address _tokenAddress, uint256 _tokenId) public whenNotPaused() {
+        address sender = _msgSender();
         // Get active bid
         (uint256 bidIndex, bytes32 bidId,,,) = getBidByBidder(
-            _tokenAddress, 
+            _tokenAddress,
             _tokenId,
-            msg.sender
+            sender
         );
 
         _cancelBid(
-            bidIndex, 
-            bidId, 
-            _tokenAddress, 
-            _tokenId, 
-            msg.sender
+            bidIndex,
+            bidId,
+            _tokenAddress,
+            _tokenId,
+            sender
         );
     }
 
@@ -340,17 +353,17 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     */
     function _cancelBid(
         uint256 _bidIndex,
-        bytes32 _bidId, 
+        bytes32 _bidId,
         address _tokenAddress,
-        uint256 _tokenId, 
+        uint256 _tokenId,
         address _bidder
-    ) 
-        internal 
+    )
+        internal
     {
         // Delete bid references
         delete bidIndexByBidId[_bidId];
         delete bidIdByTokenAndBidder[_tokenAddress][_tokenId][_bidder];
-        
+
         // Check if the bid is at the end of the mapping
         uint256 lastBidIndex = bidCounterByToken[_tokenAddress][_tokenId].sub(1);
         if (lastBidIndex != _bidIndex) {
@@ -359,7 +372,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
             bidsByToken[_tokenAddress][_tokenId][_bidIndex] = lastBid;
             bidIndexByBidId[lastBid.id] = _bidIndex;
         }
-        
+
         // Delete empty index
         delete bidsByToken[_tokenAddress][_tokenId][lastBidIndex];
 
@@ -382,9 +395,9 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     * @param _bidder - address of the bidder
     * @return bool whether the bidder has an active bid
     */
-    function _bidderHasABid(address _tokenAddress, uint256 _tokenId, address _bidder) 
+    function _bidderHasABid(address _tokenAddress, uint256 _tokenId, address _bidder)
         internal
-        view 
+        view
         returns (bool)
     {
         bytes32 bidId = bidIdByTokenAndBidder[_tokenAddress][_tokenId][_bidder];
@@ -398,27 +411,27 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     }
 
     /**
-    * @dev Get the active bid id and index by a bidder and an specific token. 
+    * @dev Get the active bid id and index by a bidder and an specific token.
     * @notice If the bidder has not a valid bid, the transaction will be reverted.
     * @param _tokenAddress - address of the ERC721 token
     * @param _tokenId - uint256 of the token id
     * @param _bidder - address of the bidder
-    * @return uint256 of the bid index to be used within bidsByToken mapping
-    * @return bytes32 of the bid id
-    * @return address of the bidder address
-    * @return uint256 of the bid price
-    * @return uint256 of the expiration time
+    * @return bidIndex - uint256 of the bid index to be used within bidsByToken mapping
+    * @return bidId - bytes32 of the bid id
+    * @return bidder - address of the bidder address
+    * @return price - uint256 of the bid price
+    * @return expiresAt - uint256 of the expiration time
     */
-    function getBidByBidder(address _tokenAddress, uint256 _tokenId, address _bidder) 
+    function getBidByBidder(address _tokenAddress, uint256 _tokenId, address _bidder)
         public
-        view 
+        view
         returns (
-            uint256 bidIndex, 
-            bytes32 bidId, 
-            address bidder, 
-            uint256 price, 
+            uint256 bidIndex,
+            bytes32 bidId,
+            address bidder,
+            uint256 price,
             uint256 expiresAt
-        ) 
+        )
     {
         bidId = bidIdByTokenAndBidder[_tokenAddress][_tokenId][_bidder];
         bidIndex = bidIndexByBidId[bidId];
@@ -433,18 +446,17 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     * @param _tokenAddress - address of the ERC721 token
     * @param _tokenId - uint256 of the token id
     * @param _index - uint256 of the index
-    * @return uint256 of the bid index to be used within bidsByToken mapping
     * @return bytes32 of the bid id
     * @return address of the bidder address
     * @return uint256 of the bid price
     * @return uint256 of the expiration time
     */
-    function getBidByToken(address _tokenAddress, uint256 _tokenId, uint256 _index) 
-        public 
+    function getBidByToken(address _tokenAddress, uint256 _tokenId, uint256 _index)
+        public
         view
-        returns (bytes32, address, uint256, uint256) 
+        returns (bytes32, address, uint256, uint256)
     {
-        
+
         Bid memory bid = _getBid(_tokenAddress, _tokenId, _index);
         return (
             bid.id,
@@ -455,16 +467,16 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     }
 
     /**
-    * @dev Get the active bid id and index by a bidder and an specific token. 
+    * @dev Get the active bid id and index by a bidder and an specific token.
     * @notice If the index is not valid, it will revert.
     * @param _tokenAddress - address of the ERC721 token
     * @param _tokenId - uint256 of the index
     * @param _index - uint256 of the index
     * @return Bid
     */
-    function _getBid(address _tokenAddress, uint256 _tokenId, uint256 _index) 
-        internal 
-        view 
+    function _getBid(address _tokenAddress, uint256 _tokenId, uint256 _index)
+        internal
+        view
         returns (Bid memory)
     {
         require(_index < bidCounterByToken[_tokenAddress][_tokenId], "Invalid index");
@@ -476,11 +488,18 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     * charged to the seller on a successful sale
     * @param _ownerCutPerMillion - Share amount, from 0 to 999,999
     */
-    function setOwnerCutPerMillion(uint256 _ownerCutPerMillion) external onlyOwner {
+    function setOwnerCutPerMillion(uint256 _ownerCutPerMillion) public onlyOwner {
         require(_ownerCutPerMillion < ONE_MILLION, "The owner cut should be between 0 and 999,999");
 
         ownerCutPerMillion = _ownerCutPerMillion;
         emit ChangedOwnerCutPerMillion(ownerCutPerMillion);
+    }
+
+     /**
+    * @dev Pause the contract
+    */
+    function pause() external onlyOwner {
+        _pause();
     }
 
     /**
@@ -551,6 +570,6 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
         require(
             manaToken.allowance(_bidder, address(this)) >= _amount,
             "The contract is not authorized to use MANA on bidder behalf"
-        );        
+        );
     }
 }
