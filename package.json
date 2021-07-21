@@ -51,7 +51,6 @@
     "semantic-release": "^15.13.3",
     "solidity-sha3": "^0.4.1",
     "solium": "^1.1.8",
-    "truffle-flattener": "^1.2.4",
     "truffle-hdwallet-provider": "0.0.3",
     "ts-node": "^10.1.0",
     "web3": "^1.4.0"
