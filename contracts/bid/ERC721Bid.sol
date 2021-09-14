@@ -115,7 +115,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction
 
         require(
             _duration >= MIN_BID_DURATION,
-            "The bid should be last longer than a minute"
+            "The bid should last at least one minute"
         );
 
         require(
