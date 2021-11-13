@@ -11,6 +11,7 @@ require('chai')
 const BN = web3.utils.BN
 const expect = require('chai').use(require('bn-chai')(BN)).expect
 
+const RoyaltiesManager = artifacts.require('RoyaltiesManager')
 const BidContract = artifacts.require('FakeBid')
 const erc20 = artifacts.require('FakeERC20')
 const Token = artifacts.require('Token')
@@ -75,9 +76,13 @@ contract('Bid', function([
   oneMoreBidder,
   bidderWithoutFunds,
   relayer,
+  feesCollector,
+  itemCreator,
+  itemBeneficiary,
   hacker
 ]) {
   let bidContract
+  let royaltiesManager
   let mana
   let token
   let composableToken
@@ -99,7 +104,7 @@ contract('Bid', function([
   const twoWeeksInSeconds = duration.weeks(2)
   const moreThanSixMonthInSeconds = duration.weeks(26) + duration.seconds(1)
   const domain = 'Decentraland Bid'
-  const version = '1'
+  const version = '2'
 
   const creationParams = {
     ...fromOwner,
@@ -164,7 +169,23 @@ contract('Bid', function([
     token = await Token.new(creationParams)
     composableToken = await ComposableToken.new(creationParams)
     tokenWithoutInterface = await TokenWithoutInterface.new(creationParams)
-    bidContract = await BidContract.new(mana.address, owner, 0, creationParams)
+
+    royaltiesManager = await RoyaltiesManager.new(
+      [itemCreator, itemBeneficiary],
+      {
+        from: owner
+      }
+    )
+
+    bidContract = await BidContract.new(
+      owner,
+      feesCollector,
+      mana.address,
+      royaltiesManager.address,
+      0,
+      0,
+      creationParams
+    )
 
     await mana.mint(initialBalance, bidder)
     await mana.mint(initialBalance, anotherBidder)
@@ -544,11 +565,9 @@ contract('Bid', function([
     })
 
     it('should cancel a bid', async function() {
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       let bidCounter = await bidContract.bidCounterByToken(
         token.address,
@@ -575,11 +594,9 @@ contract('Bid', function([
     })
 
     it('should cancel a bid :: Relayed EIP721', async function() {
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       let bidCounter = await bidContract.bidCounterByToken(
         token.address,
@@ -717,11 +734,9 @@ contract('Bid', function([
       let ownerOfTokenOne = await token.ownerOf(tokenOne)
       ownerOfTokenOne.should.be.equal(holder)
 
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       await token.safeTransferFromWithBytes(
         holder,
@@ -768,11 +783,9 @@ contract('Bid', function([
       let ownerOfTokenOne = await token.ownerOf(tokenOne)
       ownerOfTokenOne.should.be.equal(holder)
 
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       const functionSignature = web3.eth.abi.encodeFunctionCall(
         {
@@ -853,11 +866,9 @@ contract('Bid', function([
       let ownerOfTokenOne = await composableToken.ownerOf(tokenOne)
       ownerOfTokenOne.should.be.equal(holder)
 
-      const bidId = (await bidContract.getBidByToken(
-        composableToken.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(composableToken.address, tokenOne, 0)
+      )[0]
 
       await composableToken.safeTransferFromWithBytes(
         holder,
@@ -901,17 +912,13 @@ contract('Bid', function([
         [0, 1, 2]
       )
 
-      const firstBidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const firstBidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
-      const secondBidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        1
-      ))[0]
+      const secondBidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 1)
+      )[0]
 
       await token.safeTransferFromWithBytes(
         holder,
@@ -961,17 +968,13 @@ contract('Bid', function([
         [0, 1, 2]
       )
 
-      let firstBidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      let firstBidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
-      let bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        1
-      ))[0]
+      let bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 1)
+      )[0]
 
       // Accept bid for tokenOne
       await token.safeTransferFromWithBytes(
@@ -1041,11 +1044,9 @@ contract('Bid', function([
     })
 
     it('reverts when accepting invalid tokenId', async function() {
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       await assertRevert(
         token.safeTransferFromWithBytes(
@@ -1059,11 +1060,9 @@ contract('Bid', function([
     })
 
     it('reverts when accepting invalid bidId', async function() {
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       await bidContract.cancelBid(token.address, tokenOne, fromBidder)
 
@@ -1079,11 +1078,9 @@ contract('Bid', function([
     })
 
     it('reverts when accepting with insufficient funds', async function() {
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       await mana.transfer(holder, initialBalance, fromBidder)
 
@@ -1099,11 +1096,9 @@ contract('Bid', function([
     })
 
     it('reverts when accepting without approved contract', async function() {
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       await mana.approve(bidContract.address, 0, fromBidder)
 
@@ -1119,11 +1114,9 @@ contract('Bid', function([
     })
 
     it('reverts when accepting bid for another token with the same index and id', async function() {
-      const bidId = (await bidContract.getBidByToken(
-        composableToken.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(composableToken.address, tokenOne, 0)
+      )[0]
 
       await assertRevert(
         token.safeTransferFromWithBytes(
@@ -1139,11 +1132,9 @@ contract('Bid', function([
     it('reverts when accepting an expired bid', async function() {
       await increaseTime(twoWeeksInSeconds + duration.minutes(1))
 
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       await assertRevert(
         token.safeTransferFromWithBytes(
@@ -1157,11 +1148,9 @@ contract('Bid', function([
     })
 
     it('reverts when accepting with fingerprint changed', async function() {
-      const bidId = (await bidContract.getBidByToken(
-        composableToken.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(composableToken.address, tokenOne, 0)
+      )[0]
 
       await composableToken.setFingerprint(tokenOne, 2)
 
@@ -1185,11 +1174,11 @@ contract('Bid', function([
       let holderBalance = await mana.balanceOf(holder)
       expect(holderBalance).to.be.eq.BN(0)
 
-      let ownerBalance = await mana.balanceOf(owner)
-      expect(ownerBalance).to.be.eq.BN(0)
+      let feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance).to.be.eq.BN(0)
 
       // Set 10% of bid price
-      await bidContract.setOwnerCutPerMillion(100000, fromOwner)
+      await bidContract.setFeesCollectorCutPerMillion(100000, fromOwner)
 
       await bidContract.placeBid(
         token.address,
@@ -1199,11 +1188,9 @@ contract('Bid', function([
         fromBidder
       )
 
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       await token.safeTransferFromWithBytes(
         holder,
@@ -1243,30 +1230,34 @@ contract('Bid', function([
         (bidPrice - bidPrice * 0.1).toString()
       )
 
-      ownerBalance = await mana.balanceOf(owner)
-      expect(ownerBalance.toString()).to.be.equal((bidPrice * 0.1).toString())
+      feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance.toString()).to.be.equal(
+        (bidPrice * 0.1).toString()
+      )
     })
 
     it('should set to 0', async function() {
-      let ownerCut = await bidContract.ownerCutPerMillion()
-      expect(ownerCut).to.be.eq.BN(0)
+      let feesCollectorCut = await bidContract.feesCollectorCutPerMillion()
+      expect(feesCollectorCut).to.be.eq.BN(0)
 
-      await bidContract.setOwnerCutPerMillion(10000, fromOwner)
-      ownerCut = await bidContract.ownerCutPerMillion()
-      expect(ownerCut).to.be.eq.BN(web3.utils.toBN(10000))
+      await bidContract.setFeesCollectorCutPerMillion(10000, fromOwner)
+      feesCollectorCut = await bidContract.feesCollectorCutPerMillion()
+      expect(feesCollectorCut).to.be.eq.BN(web3.utils.toBN(10000))
 
-      await bidContract.setOwnerCutPerMillion(0, fromOwner)
-      ownerCut = await bidContract.ownerCutPerMillion()
-      expect(ownerCut).to.be.eq.BN(0)
+      await bidContract.setFeesCollectorCutPerMillion(0, fromOwner)
+      feesCollectorCut = await bidContract.feesCollectorCutPerMillion()
+      expect(feesCollectorCut).to.be.eq.BN(0)
     })
 
     it('reverts when calling by hacker', async function() {
-      await assertRevert(bidContract.setOwnerCutPerMillion(1000, fromHacker))
+      await assertRevert(
+        bidContract.setFeesCollectorCutPerMillion(1000, fromHacker)
+      )
     })
 
     it('reverts when set bigger than 1000000', async function() {
       await assertRevert(
-        bidContract.setOwnerCutPerMillion(1000001, fromOwner),
+        bidContract.setFeesCollectorCutPerMillion(1000001, fromOwner),
         'The owner cut should be between 0 and 999,999'
       )
     })
@@ -1285,11 +1276,9 @@ contract('Bid', function([
         fromBidder
       )
 
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       await bidContract.pause(fromOwner)
 
@@ -1336,11 +1325,9 @@ contract('Bid', function([
         fromBidder
       )
 
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       const functionSignature = web3.eth.abi.encodeFunctionCall(
         {
@@ -1411,11 +1398,9 @@ contract('Bid', function([
     })
 
     it('should remove an expired bid by bidder', async function() {
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       let bidCounter = await bidContract.bidCounterByToken(
         token.address,
@@ -1445,11 +1430,9 @@ contract('Bid', function([
     })
 
     it('should remove an expired bid by bidder :: Relayed EIP721', async function() {
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       let bidCounter = await bidContract.bidCounterByToken(
         token.address,
@@ -1510,11 +1493,9 @@ contract('Bid', function([
     })
 
     it('should remove an expired bid by anyone', async function() {
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       let bidCounter = await bidContract.bidCounterByToken(
         token.address,

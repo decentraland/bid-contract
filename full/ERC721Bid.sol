@@ -663,7 +663,7 @@ contract ERC721BidStorage {
     bidIdByTokenAndBidder;
 
 
-    uint256 public ownerCutPerMillion;
+    uint256 public feesCollectorCutPerMillion;
 
     // EVENTS
     event BidCreated(
@@ -693,7 +693,7 @@ contract ERC721BidStorage {
       address indexed _bidder
     );
 
-    event ChangedOwnerCutPerMillion(uint256 _ownerCutPerMillion);
+    event ChangedFeesCollectorCutPerMillion(uint256 _feesCollectorCutPerMillion);
 }
 
 
@@ -715,12 +715,12 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction
     * @param _manaToken - address of the mana token
     * @param _owner - address of the owner for the contract
     */
-    constructor(address _manaToken, address _owner, uint256 _ownerCutPerMillion) Ownable() Pausable() {
+    constructor(address _manaToken, address _owner, uint256 _feesCollectorCutPerMillion) Ownable() Pausable() {
          // EIP712 init
         _initializeEIP712('Decentraland Bid', '1');
 
          // Fee init
-        setOwnerCutPerMillion(_ownerCutPerMillion);
+        setFeesCollectorCutPerMillion(_feesCollectorCutPerMillion);
 
         manaToken = ERC20Interface(_manaToken);
         // Set owner
@@ -940,9 +940,9 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction
         ERC721Interface(msg.sender).transferFrom(address(this), bidder, _tokenId);
 
         uint256 saleShareAmount = 0;
-        if (ownerCutPerMillion > 0) {
+        if (feesCollectorCutPerMillion > 0) {
             // Calculate sale share
-            saleShareAmount = (price * ownerCutPerMillion) / ONE_MILLION;
+            saleShareAmount = (price * feesCollectorCutPerMillion) / ONE_MILLION;
             // Transfer share amount to the bid conctract Owner
             require(
                 manaToken.transferFrom(bidder, owner(), saleShareAmount),
@@ -1180,13 +1180,13 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction
     /**
     * @dev Sets the share cut for the owner of the contract that's
     * charged to the seller on a successful sale
-    * @param _ownerCutPerMillion - Share amount, from 0 to 999,999
+    * @param _feesCollectorCutPerMillion - Share amount, from 0 to 999,999
     */
-    function setOwnerCutPerMillion(uint256 _ownerCutPerMillion) public onlyOwner {
-        require(_ownerCutPerMillion < ONE_MILLION, "The owner cut should be between 0 and 999,999");
+    function setFeesCollectorCutPerMillion(uint256 _feesCollectorCutPerMillion) public onlyOwner {
+        require(_feesCollectorCutPerMillion < ONE_MILLION, "The owner cut should be between 0 and 999,999");
 
-        ownerCutPerMillion = _ownerCutPerMillion;
-        emit ChangedOwnerCutPerMillion(ownerCutPerMillion);
+        feesCollectorCutPerMillion = _feesCollectorCutPerMillion;
+        emit ChangedFeesCollectorCutPerMillion(feesCollectorCutPerMillion);
     }
 
      /**

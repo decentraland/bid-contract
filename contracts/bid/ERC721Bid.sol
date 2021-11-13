@@ -16,15 +16,31 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction
 
     /**
     * @dev Constructor of the contract.
-    * @param _manaToken - address of the mana token
-    * @param _owner - address of the owner for the contract
+    * @param _owner - owner
+    * @param _feesCollector - fees collector
+    * @param _manaToken - Address of the ERC20 accepted for this marketplace
+    * @param _royaltiesManager - Royalties manager contract
+    * @param _feesCollectorCutPerMillion - fees collector cut per million
+    * @param _royaltiesCutPerMillion - royalties cut per million
     */
-    constructor(address _manaToken, address _owner, uint256 _ownerCutPerMillion) Ownable() Pausable() {
+    constructor(
+        address _owner,
+        address _feesCollector,
+        address _manaToken,
+        IRoyaltiesManager _royaltiesManager,
+        uint256 _feesCollectorCutPerMillion,
+        uint256 _royaltiesCutPerMillion
+    ) Pausable() {
          // EIP712 init
-        _initializeEIP712('Decentraland Bid', '1');
+        _initializeEIP712('Decentraland Bid', '2');
 
-         // Fee init
-        setOwnerCutPerMillion(_ownerCutPerMillion);
+        // Address init
+        setFeesCollector(_feesCollector);
+        setRoyaltiesManager(_royaltiesManager);
+
+        // Fee init
+        setFeesCollectorCutPerMillion(_feesCollectorCutPerMillion);
+        setRoyaltiesCutPerMillion(_royaltiesCutPerMillion);
 
         manaToken = ERC20Interface(_manaToken);
         // Set owner
@@ -243,20 +259,53 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction
         // Transfer token to bidder
         ERC721Interface(msg.sender).transferFrom(address(this), bidder, _tokenId);
 
-        uint256 saleShareAmount = 0;
-        if (ownerCutPerMillion > 0) {
-            // Calculate sale share
-            saleShareAmount = (price * ownerCutPerMillion) / ONE_MILLION;
-            // Transfer share amount to the bid conctract Owner
-            require(
-                manaToken.transferFrom(bidder, owner(), saleShareAmount),
-                "Transfering the cut to the bid contract owner failed"
+        uint256 feesCollectorShareAmount;
+        uint256 royaltiesShareAmount;
+        address royaltiesReceiver;
+
+        // Royalties share
+        if (royaltiesCutPerMillion > 0) {
+            royaltiesShareAmount = (price * royaltiesCutPerMillion) / ONE_MILLION;
+
+            (bool success, bytes memory res) = address(royaltiesManager).staticcall(
+                abi.encodeWithSelector(
+                    royaltiesManager.getRoyaltiesReceiver.selector,
+                    address(this),
+                    _tokenId
+                )
             );
+
+            if (success) {
+                (royaltiesReceiver) = abi.decode(res, (address));
+                if (royaltiesReceiver != address(0)) {
+                require(
+                    manaToken.transferFrom(bidder, royaltiesReceiver, royaltiesShareAmount),
+                    "MarketplaceV2#_executeOrder: TRANSFER_FEES_TO_ROYALTIES_RECEIVER_FAILED"
+                );
+                }
+            }
+        }
+
+        // Fees collector share
+        {
+            feesCollectorShareAmount = (price * feesCollectorCutPerMillion) / ONE_MILLION;
+            uint256 totalFeeCollectorShareAmount = feesCollectorShareAmount;
+
+            if (royaltiesShareAmount > 0 && royaltiesReceiver == address(0)) {
+                totalFeeCollectorShareAmount += royaltiesShareAmount;
+            }
+
+            if (totalFeeCollectorShareAmount > 0) {
+                require(
+                    manaToken.transferFrom(bidder, feesCollector, totalFeeCollectorShareAmount),
+                    "MarketplaceV2#_executeOrder: TRANSFER_FEES_TO_FEES_COLLECTOR_FAILED"
+                );
+            }
         }
 
         // Transfer MANA from bidder to seller
         require(
-            manaToken.transferFrom(bidder, _from, price - saleShareAmount),
+            manaToken.transferFrom(bidder, _from, price - royaltiesShareAmount - feesCollectorShareAmount),
             "Transfering MANA to owner failed"
         );
 
@@ -267,7 +316,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction
             bidder,
             _from,
             price,
-            saleShareAmount
+            royaltiesShareAmount + feesCollectorShareAmount
         );
 
         return ERC721_Received;
@@ -482,15 +531,51 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction
     }
 
     /**
-    * @dev Sets the share cut for the owner of the contract that's
+    * @dev Sets the share cut for the fees collector of the contract that's
     * charged to the seller on a successful sale
-    * @param _ownerCutPerMillion - Share amount, from 0 to 999,999
+    * @param _feesCollectorCutPerMillion - Share amount, from 0 to 999,999
     */
-    function setOwnerCutPerMillion(uint256 _ownerCutPerMillion) public onlyOwner {
-        require(_ownerCutPerMillion < ONE_MILLION, "The owner cut should be between 0 and 999,999");
+    function setFeesCollectorCutPerMillion(uint256 _feesCollectorCutPerMillion) public onlyOwner {
+        require(_feesCollectorCutPerMillion < ONE_MILLION, "The owner cut should be between 0 and 999,999");
 
-        ownerCutPerMillion = _ownerCutPerMillion;
-        emit ChangedOwnerCutPerMillion(ownerCutPerMillion);
+        feesCollectorCutPerMillion = _feesCollectorCutPerMillion;
+        emit ChangedFeesCollectorCutPerMillion(feesCollectorCutPerMillion);
+    }
+
+    /**
+    * @dev Sets the share cut for the royalties that's
+    *  charged to the seller on a successful sale
+    * @param _royaltiesCutPerMillion - fees for royalties
+    */
+    function setRoyaltiesCutPerMillion(uint256 _royaltiesCutPerMillion) public onlyOwner {
+        royaltiesCutPerMillion = _royaltiesCutPerMillion;
+
+        require(feesCollectorCutPerMillion + royaltiesCutPerMillion < 1000000, "MarketplaceV2#setRoyaltiesCutPerMillion: TOTAL_FEES_MUST_BE_BETWEEN_0_AND_999999");
+
+        emit ChangedRoyaltiesCutPerMillion(royaltiesCutPerMillion);
+    }
+
+    /**
+    * @notice Set the fees collector
+    * @param _newFeesCollector - fees collector
+    */
+    function setFeesCollector(address _newFeesCollector) onlyOwner public {
+        require(_newFeesCollector != address(0), "MarketplaceV2#setFeesCollector: INVALID_FEES_COLLECTOR");
+
+        emit FeesCollectorSet(feesCollector, _newFeesCollector);
+        feesCollector = _newFeesCollector;
+    }
+
+    /**
+    * @notice Set the royalties manager
+    * @param _newRoyaltiesManager - royalties manager
+    */
+    function setRoyaltiesManager(IRoyaltiesManager _newRoyaltiesManager) onlyOwner public {
+        require(address(_newRoyaltiesManager).isContract(), "MarketplaceV2#setRoyaltiesManager: INVALID_ROYALTIES_MANAGER");
+
+
+        emit RoyaltiesManagerSet(royaltiesManager, _newRoyaltiesManager);
+        royaltiesManager = _newRoyaltiesManager;
     }
 
      /**
