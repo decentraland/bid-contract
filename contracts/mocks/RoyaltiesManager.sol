@@ -11,11 +11,11 @@ contract RoyaltiesManager {
   }
 
   function getRoyaltiesReceiver(address _contractAddress, uint256 _tokenId) external view returns(address royaltiesReceiver) {
-    if (_tokenId == 0) {
+    if (_tokenId == 1) {
       return beneficiaries[0];
-    } if (_tokenId == 1) {
-      return beneficiaries[1];
     } if (_tokenId == 2) {
+      return beneficiaries[1];
+    } if (_tokenId == 3) {
       return address(0);
     } else {
       revert();
