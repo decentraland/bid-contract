@@ -1,3 +1,5 @@
+@version 1.0.0
+
 # Smart contract for bidding ERC721 tokens
 
 Bid contract for ERC721 tokens
