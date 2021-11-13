@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.7.6;
+pragma solidity ^0.8.10;
 
-import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 
 import "../commons/Ownable.sol";
@@ -13,7 +12,6 @@ import "./ERC721BidStorage.sol";
 
 
 contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction {
-    using SafeMath for uint256;
     using Address for address;
 
     /**
@@ -130,7 +128,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction
             "The token should have an owner different from the sender"
         );
 
-        uint256 expiresAt = block.timestamp.add(_duration);
+        uint256 expiresAt = block.timestamp + _duration;
 
         bytes32 bidId = keccak256(
             abi.encodePacked(
@@ -248,7 +246,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction
         uint256 saleShareAmount = 0;
         if (ownerCutPerMillion > 0) {
             // Calculate sale share
-            saleShareAmount = price.mul(ownerCutPerMillion).div(ONE_MILLION);
+            saleShareAmount = (price * ownerCutPerMillion) / ONE_MILLION;
             // Transfer share amount to the bid conctract Owner
             require(
                 manaToken.transferFrom(bidder, owner(), saleShareAmount),
@@ -258,7 +256,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction
 
         // Transfer MANA from bidder to seller
         require(
-            manaToken.transferFrom(bidder, _from, price.sub(saleShareAmount)),
+            manaToken.transferFrom(bidder, _from, price - saleShareAmount),
             "Transfering MANA to owner failed"
         );
 
@@ -365,7 +363,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction
         delete bidIdByTokenAndBidder[_tokenAddress][_tokenId][_bidder];
 
         // Check if the bid is at the end of the mapping
-        uint256 lastBidIndex = bidCounterByToken[_tokenAddress][_tokenId].sub(1);
+        uint256 lastBidIndex = bidCounterByToken[_tokenAddress][_tokenId] - 1;
         if (lastBidIndex != _bidIndex) {
             // Move last bid to the removed place
             Bid storage lastBid = bidsByToken[_tokenAddress][_tokenId][lastBidIndex];

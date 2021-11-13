@@ -488,7 +488,7 @@ contract('Bid', function([
           fiftyNineSeconds,
           fromBidder
         ),
-        'The bid should be last longer than a minute'
+        'The bid should last at least one minute'
       )
     })
 
