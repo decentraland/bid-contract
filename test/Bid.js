@@ -18,6 +18,8 @@ const Token = artifacts.require('Token')
 const ComposableToken = artifacts.require('ComposableToken')
 const TokenWithoutInterface = artifacts.require('TokenWithoutInterface')
 
+const zeroAddress = '0x0000000000000000000000000000000000000000'
+
 function assertEvent(log, expectedEventName, expectedArgs) {
   const { event, args } = log
   expect(event).to.be.equal(expectedEventName)
@@ -429,7 +431,7 @@ contract('Bid', function([
           fingerprint,
           fromBidder
         ),
-        'Token fingerprint is not valid'
+        'ERC721Bid#_requireComposableERC721: INVALID_FINGERPRINT'
       )
     })
 
@@ -442,7 +444,7 @@ contract('Bid', function([
           twoWeeksInSeconds,
           fromBidder
         ),
-        'Token has an invalid ERC721 implementation'
+        'ERC721Bid#_requireERC721: INVALID_CONTRACT_IMPLEMENTATION'
       )
     })
 
@@ -455,7 +457,7 @@ contract('Bid', function([
           twoWeeksInSeconds,
           fromBidder
         ),
-        'Token should be a contract'
+        'ERC721Bid#_requireERC721: ADDRESS_NOT_A_CONTRACT'
       )
     })
 
@@ -468,7 +470,7 @@ contract('Bid', function([
           twoWeeksInSeconds,
           fromBidderWithoutFunds
         ),
-        'Insufficient funds'
+        'ERC721Bid#_requireBidderBalance: INSUFFICIENT_FUNDS'
       )
     })
 
@@ -482,7 +484,7 @@ contract('Bid', function([
           twoWeeksInSeconds,
           fromBidder
         ),
-        'The contract is not authorized to use MANA on bidder behalf'
+        'ERC721Bid#_requireBidderBalance: CONTRACT_NOT_AUTHORIZED'
       )
     })
 
@@ -495,7 +497,7 @@ contract('Bid', function([
           twoWeeksInSeconds,
           fromBidder
         ),
-        'Price should be bigger than 0'
+        'ERC721Bid#_placeBid: PRICE_MUST_BE_GT_0'
       )
     })
 
@@ -509,7 +511,7 @@ contract('Bid', function([
           fiftyNineSeconds,
           fromBidder
         ),
-        'The bid should last at least one minute'
+        'ERC721Bid#_placeBid: DURATION_MUST_BE_GTE_MIN_BID_DURATION'
       )
     })
 
@@ -522,7 +524,7 @@ contract('Bid', function([
           moreThanSixMonthInSeconds,
           fromBidder
         ),
-        'The bid can not last longer than 6 months'
+        'ERC721Bid#_placeBid: DURATION_MUST_BE_LTE_MAX_BID_DURATION'
       )
     })
 
@@ -548,7 +550,7 @@ contract('Bid', function([
           twoWeeksInSeconds,
           fromBidder
         ),
-        'The token should have an owner different from the sender'
+        'ERC721Bid#_placeBid: ALREADY_OWNED_TOKEN'
       )
     })
   })
@@ -691,14 +693,14 @@ contract('Bid', function([
     it('reverts when cancelling invalid bid', async function() {
       await assertRevert(
         bidContract.cancelBid(token.address, tokenOne, fromAnotherBidder),
-        'Bidder has not an active bid for this token'
+        'ERC721Bid#getBidByBidder: BIDDER_HAS_NOT_ACTIVE_BIDS_FOR_TOKEN'
       )
     })
 
     it('reverts when cancelling by hacker', async function() {
       await assertRevert(
         bidContract.cancelBid(token.address, tokenOne, fromHacker),
-        'Bidder has not an active bid for this token'
+        'ERC721Bid#getBidByBidder: BIDDER_HAS_NOT_ACTIVE_BIDS_FOR_TOKEN'
       )
     })
   })
@@ -1002,15 +1004,15 @@ contract('Bid', function([
 
       await assertRevert(
         bidContract.getBidByToken(token.address, tokenOne, 0),
-        'Invalid index'
+        'ERC721Bid#_getBid: INVALID_INDEX'
       )
       await assertRevert(
         bidContract.getBidByToken(token.address, tokenOne, 1),
-        'Invalid index'
+        'ERC721Bid#_getBid: INVALID_INDEX'
       )
       await assertRevert(
         bidContract.getBidByToken(token.address, tokenOne, 2),
-        'Invalid index'
+        'ERC721Bid#_getBid: INVALID_INDEX'
       )
 
       await assertRevert(
@@ -1166,7 +1168,267 @@ contract('Bid', function([
     })
   })
 
-  describe('Share sale', function() {
+  describe.only('Fees', function() {
+    describe('feesCollectorCutPerMillion', function() {
+      it('should be initialized to 0', async function() {
+        const response = await bidContract.feesCollectorCutPerMillion()
+        response.should.be.eq.BN(0)
+      })
+
+      it('should change fee collector sale cut', async function() {
+        const feesCollectorCut = 10
+
+        const { logs } = await bidContract.setFeesCollectorCutPerMillion(
+          feesCollectorCut,
+          {
+            from: owner
+          }
+        )
+        let response = await bidContract.feesCollectorCutPerMillion()
+        response.should.be.eq.BN(feesCollectorCut)
+        logs.length.should.be.equal(1)
+        assertEvent(logs[0], 'ChangedFeesCollectorCutPerMillion', {
+          _feesCollectorCutPerMillion: feesCollectorCut
+        })
+
+        await bidContract.setFeesCollectorCutPerMillion(0, {
+          from: owner
+        })
+        response = await bidContract.feesCollectorCutPerMillion()
+        response.should.be.eq.BN(0)
+      })
+
+      it('should change fee collector sale cut :: Relayed EIP721', async function() {
+        const feesCollectorCut = 10
+
+        const functionSignature = web3.eth.abi.encodeFunctionCall(
+          {
+            inputs: [
+              {
+                internalType: 'uint256',
+                name: '_feesCollectorCutPerMillion',
+                type: 'uint256'
+              }
+            ],
+            name: 'setFeesCollectorCutPerMillion',
+            outputs: [],
+            stateMutability: 'nonpayable',
+            type: 'function'
+          },
+          [feesCollectorCut]
+        )
+
+        const { logs } = await sendMetaTx(
+          bidContract,
+          functionSignature,
+          owner,
+          relayer,
+          null,
+          domain,
+          version
+        )
+
+        logs.length.should.be.equal(2)
+        logs.shift()
+
+        let response = await bidContract.feesCollectorCutPerMillion()
+        response.should.be.eq.BN(feesCollectorCut)
+        logs.length.should.be.equal(1)
+        assertEvent(logs[0], 'ChangedFeesCollectorCutPerMillion', {
+          _feesCollectorCutPerMillion: feesCollectorCut
+        })
+      })
+
+      it('should fail to change fee collector cut (% invalid above)', async function() {
+        await assertRevert(
+          bidContract.setFeesCollectorCutPerMillion(10000000, { from: owner }),
+          'ERC721Bid#setFeesCollectorCutPerMillion: TOTAL_FEES_MUST_BE_BETWEEN_0_AND_999999'
+        )
+      })
+
+      it('should fail to change fee collector cut (% invalid above along with royalties cut)', async function() {
+        await bidContract.setRoyaltiesCutPerMillion(1, { from: owner })
+
+        await assertRevert(
+          bidContract.setFeesCollectorCutPerMillion(999999, { from: owner }),
+          'ERC721Bid#setFeesCollectorCutPerMillion: TOTAL_FEES_MUST_BE_BETWEEN_0_AND_999999'
+        )
+      })
+
+      it('should fail to change fee collector cut (not owner)', async function() {
+        const feesCollectorCut = 10
+
+        await assertRevert(
+          bidContract.setFeesCollectorCutPerMillion(feesCollectorCut, {
+            from: holder
+          }),
+          'Ownable: caller is not the owner'
+        )
+      })
+
+      it('should fail to change fee collector cut (not owner) :: Relayed EIP721', async function() {
+        const feesCollectorCut = 10
+
+        const functionSignature = web3.eth.abi.encodeFunctionCall(
+          {
+            inputs: [
+              {
+                internalType: 'uint256',
+                name: '_feesCollectorCutPerMillion',
+                type: 'uint256'
+              }
+            ],
+            name: 'setFeesCollectorCutPerMillion',
+            outputs: [],
+            stateMutability: 'nonpayable',
+            type: 'function'
+          },
+          [feesCollectorCut]
+        )
+
+        await assertRevert(
+          sendMetaTx(
+            bidContract,
+            functionSignature,
+            holder,
+            relayer,
+            null,
+            domain,
+            version
+          )
+        )
+      })
+    })
+
+    describe('royaltiesCutPerMillion', function() {
+      it('should be initialized to 0', async function() {
+        const response = await bidContract.royaltiesCutPerMillion()
+        response.should.be.eq.BN(0)
+      })
+
+      it('should change royalties cut', async function() {
+        const royaltiesCut = 10
+
+        const { logs } = await bidContract.setRoyaltiesCutPerMillion(
+          royaltiesCut,
+          {
+            from: owner
+          }
+        )
+        let response = await bidContract.royaltiesCutPerMillion()
+        response.should.be.eq.BN(royaltiesCut)
+        logs.length.should.be.equal(1)
+        assertEvent(logs[0], 'ChangedRoyaltiesCutPerMillion', {
+          _royaltiesCutPerMillion: royaltiesCut
+        })
+
+        await bidContract.setRoyaltiesCutPerMillion(0, {
+          from: owner
+        })
+        response = await bidContract.royaltiesCutPerMillion()
+        response.should.be.eq.BN(0)
+      })
+
+      it('should change royalties cut :: Relayed EIP721', async function() {
+        const royaltiesCut = 10
+
+        const functionSignature = web3.eth.abi.encodeFunctionCall(
+          {
+            inputs: [
+              {
+                internalType: 'uint256',
+                name: '_royaltiesCutPerMillion',
+                type: 'uint256'
+              }
+            ],
+            name: 'setRoyaltiesCutPerMillion',
+            outputs: [],
+            stateMutability: 'nonpayable',
+            type: 'function'
+          },
+          [royaltiesCut]
+        )
+
+        const { logs } = await sendMetaTx(
+          bidContract,
+          functionSignature,
+          owner,
+          relayer,
+          null,
+          domain,
+          version
+        )
+
+        logs.length.should.be.equal(2)
+        logs.shift()
+
+        let response = await bidContract.royaltiesCutPerMillion()
+        response.should.be.eq.BN(royaltiesCut)
+        logs.length.should.be.equal(1)
+        assertEvent(logs[0], 'ChangedRoyaltiesCutPerMillion', {
+          _royaltiesCutPerMillion: royaltiesCut
+        })
+      })
+
+      it('should fail to change royalties cut (% invalid above)', async function() {
+        await assertRevert(
+          bidContract.setRoyaltiesCutPerMillion(10000000, { from: owner }),
+          'ERC721Bid#setRoyaltiesCutPerMillion: TOTAL_FEES_MUST_BE_BETWEEN_0_AND_999999'
+        )
+      })
+
+      it('should fail to change royalties cut (% invalid above along with fee collector cut)', async function() {
+        await bidContract.setFeesCollectorCutPerMillion(1, { from: owner })
+
+        await assertRevert(
+          bidContract.setRoyaltiesCutPerMillion(999999, { from: owner }),
+          'ERC721Bid#setRoyaltiesCutPerMillion: TOTAL_FEES_MUST_BE_BETWEEN_0_AND_999999'
+        )
+      })
+
+      it('should fail to change royalties cut (not owner)', async function() {
+        const royaltiesCut = 10
+
+        await assertRevert(
+          bidContract.setRoyaltiesCutPerMillion(royaltiesCut, { from: holder }),
+          'Ownable: caller is not the owner'
+        )
+      })
+
+      it('should fail to change royalties cut (not owner) :: Relayed EIP721', async function() {
+        const royaltiesCut = 10
+
+        const functionSignature = web3.eth.abi.encodeFunctionCall(
+          {
+            inputs: [
+              {
+                internalType: 'uint256',
+                name: '_royaltiesCutPerMillion',
+                type: 'uint256'
+              }
+            ],
+            name: 'setRoyaltiesCutPerMillion',
+            outputs: [],
+            stateMutability: 'nonpayable',
+            type: 'function'
+          },
+          [royaltiesCut]
+        )
+
+        await assertRevert(
+          sendMetaTx(
+            bidContract,
+            functionSignature,
+            holder,
+            relayer,
+            null,
+            domain,
+            version
+          )
+        )
+      })
+    })
+
     it('should share sale', async function() {
       let bidderBalance = await mana.balanceOf(bidder)
       expect(bidderBalance).to.be.eq.BN(initialBalance)
@@ -1258,7 +1520,7 @@ contract('Bid', function([
     it('reverts when set bigger than 1000000', async function() {
       await assertRevert(
         bidContract.setFeesCollectorCutPerMillion(1000001, fromOwner),
-        'The owner cut should be between 0 and 999,999'
+        'ERC721Bid#setFeesCollectorCutPerMillion: TOTAL_FEES_MUST_BE_BETWEEN_0_AND_999999'
       )
     })
   })
@@ -1615,7 +1877,7 @@ contract('Bid', function([
           [anotherBidder],
           fromAnotherBidder
         ),
-        'Bidder has not an active bid for this token'
+        'ERC721Bid#getBidByBidder: BIDDER_HAS_NOT_ACTIVE_BIDS_FOR_TOKEN'
       )
     })
 
@@ -1627,7 +1889,7 @@ contract('Bid', function([
           [bidder],
           fromBidder
         ),
-        'The bid to remove should be expired'
+        'ERC721Bid#_removeExpiredBid: BID_NOT_EXPIRED'
       )
     })
 
@@ -1639,7 +1901,7 @@ contract('Bid', function([
           [bidder],
           fromBidder
         ),
-        'Parameter arrays should have the same length'
+        'ERC721Bid#removeExpiredBids: LENGHT_MISMATCH'
       )
 
       await assertRevert(
@@ -1649,7 +1911,7 @@ contract('Bid', function([
           [bidder],
           fromBidder
         ),
-        'Parameter arrays should have the same length'
+        'ERC721Bid#removeExpiredBids: LENGHT_MISMATCH'
       )
       await assertRevert(
         bidContract.removeExpiredBids(
@@ -1658,7 +1920,7 @@ contract('Bid', function([
           [bidder, anotherBidder],
           fromBidder
         ),
-        'Parameter arrays should have the same length'
+        'ERC721Bid#removeExpiredBids: LENGHT_MISMATCH'
       )
 
       await assertRevert(
@@ -1668,7 +1930,7 @@ contract('Bid', function([
           [bidder],
           fromBidder
         ),
-        'Parameter arrays should have the same length'
+        'ERC721Bid#removeExpiredBids: LENGHT_MISMATCH'
       )
 
       await assertRevert(
@@ -1678,7 +1940,7 @@ contract('Bid', function([
           [bidder, anotherBidder],
           fromBidder
         ),
-        'Parameter arrays should have the same length'
+        'ERC721Bid#removeExpiredBids: LENGHT_MISMATCH'
       )
 
       await assertRevert(
@@ -1688,7 +1950,241 @@ contract('Bid', function([
           [bidder, anotherBidder],
           fromBidder
         ),
-        'Parameter arrays should have the same length'
+        'ERC721Bid#removeExpiredBids: LENGHT_MISMATCH'
+      )
+    })
+  })
+
+  describe('setFeesCollector', function() {
+    it('should change fee collector', async function() {
+      let _feesCollector = await bidContract.feesCollector()
+      expect(_feesCollector).to.be.equal(feesCollector)
+
+      const { logs } = await bidContract.setFeesCollector(holder, {
+        from: owner
+      })
+
+      _feesCollector = await bidContract.feesCollector()
+      expect(_feesCollector).to.be.equal(holder)
+
+      logs.length.should.be.equal(1)
+      expect(logs.length).to.be.equal(1)
+      assertEvent(logs[0], 'FeesCollectorSet', {
+        _oldFeesCollector: feesCollector,
+        _newFeesCollector: holder
+      })
+
+      await bidContract.setFeesCollector(feesCollector, {
+        from: owner
+      })
+
+      _feesCollector = await bidContract.feesCollector()
+      expect(_feesCollector).to.be.equal(feesCollector)
+    })
+
+    it('should change fee collector :: Relayed EIP721', async function() {
+      let _feesCollector = await bidContract.feesCollector()
+      expect(_feesCollector).to.be.equal(feesCollector)
+
+      const functionSignature = web3.eth.abi.encodeFunctionCall(
+        {
+          inputs: [
+            {
+              internalType: 'address',
+              name: '_feesCollector',
+              type: 'address'
+            }
+          ],
+          name: 'setFeesCollector',
+          outputs: [],
+          stateMutability: 'nonpayable',
+          type: 'function'
+        },
+        [holder]
+      )
+
+      const { logs } = await sendMetaTx(
+        bidContract,
+        functionSignature,
+        owner,
+        relayer,
+        null,
+        domain,
+        version
+      )
+
+      logs.length.should.be.equal(2)
+      logs.shift()
+
+      _feesCollector = await bidContract.feesCollector()
+      expect(_feesCollector).to.be.equal(holder)
+
+      assertEvent(logs[0], 'FeesCollectorSet', {
+        _oldFeesCollector: feesCollector,
+        _newFeesCollector: holder
+      })
+    })
+
+    it('should fail to change fee collector address zero', async function() {
+      await assertRevert(
+        bidContract.setFeesCollector(zeroAddress, { from: owner }),
+        'ERC721Bid#setFeesCollector: INVALID_FEES_COLLECTOR'
+      )
+    })
+
+    it('should fail to change fee collector (not owner)', async function() {
+      await assertRevert(
+        bidContract.setFeesCollector(holder, { from: holder }),
+        'Ownable: caller is not the owner'
+      )
+    })
+
+    it('should fail to change fee collector (not owner) :: Relayed EIP721', async function() {
+      const functionSignature = web3.eth.abi.encodeFunctionCall(
+        {
+          inputs: [
+            {
+              internalType: 'address',
+              name: '_feesCollector',
+              type: 'address'
+            }
+          ],
+          name: 'setFeesCollector',
+          outputs: [],
+          stateMutability: 'nonpayable',
+          type: 'function'
+        },
+        [holder]
+      )
+
+      await assertRevert(
+        sendMetaTx(
+          bidContract,
+          functionSignature,
+          holder,
+          relayer,
+          null,
+          domain,
+          version
+        )
+      )
+    })
+  })
+
+  describe('setRoyaltiesManager', function() {
+    it('should change royalties manager', async function() {
+      let _royaltiesManager = await bidContract.royaltiesManager()
+      expect(_royaltiesManager).to.be.equal(royaltiesManager.address)
+
+      const { logs } = await bidContract.setRoyaltiesManager(token.address, {
+        from: owner
+      })
+
+      _royaltiesManager = await bidContract.royaltiesManager()
+      expect(_royaltiesManager).to.be.equal(token.address)
+
+      logs.length.should.be.equal(1)
+      expect(logs.length).to.be.equal(1)
+      assertEvent(logs[0], 'RoyaltiesManagerSet', {
+        _oldRoyaltiesManager: royaltiesManager.address,
+        _newRoyaltiesManager: token.address
+      })
+
+      await bidContract.setRoyaltiesManager(royaltiesManager.address, {
+        from: owner
+      })
+
+      _royaltiesManager = await bidContract.royaltiesManager()
+      expect(_royaltiesManager).to.be.equal(royaltiesManager.address)
+    })
+
+    it('should change royalties manager :: Relayed EIP721', async function() {
+      let _royaltiesManager = await bidContract.royaltiesManager()
+      expect(_royaltiesManager).to.be.equal(royaltiesManager.address)
+
+      const functionSignature = web3.eth.abi.encodeFunctionCall(
+        {
+          inputs: [
+            {
+              internalType: 'address',
+              name: '_royaltiesManager',
+              type: 'address'
+            }
+          ],
+          name: 'setRoyaltiesManager',
+          outputs: [],
+          stateMutability: 'nonpayable',
+          type: 'function'
+        },
+        [token.address]
+      )
+
+      const { logs } = await sendMetaTx(
+        bidContract,
+        functionSignature,
+        owner,
+        relayer,
+        null,
+        domain,
+        version
+      )
+
+      logs.length.should.be.equal(2)
+      logs.shift()
+
+      _royaltiesManager = await bidContract.royaltiesManager()
+      expect(_royaltiesManager).to.be.equal(token.address)
+
+      logs.length.should.be.equal(1)
+      expect(logs.length).to.be.equal(1)
+      assertEvent(logs[0], 'RoyaltiesManagerSet', {
+        _oldRoyaltiesManager: royaltiesManager.address,
+        _newRoyaltiesManager: token.address
+      })
+    })
+
+    it('should fail to change royalties manager address zero', async function() {
+      await assertRevert(
+        bidContract.setRoyaltiesManager(zeroAddress, { from: owner }),
+        'ERC721Bid#setRoyaltiesManager: INVALID_ROYALTIES_MANAGER'
+      )
+    })
+
+    it('should fail to change royalties manager (not owner)', async function() {
+      await assertRevert(
+        bidContract.setRoyaltiesManager(token.address, { from: holder }),
+        'Ownable: caller is not the owner'
+      )
+    })
+
+    it('should fail to change royalties manager (not owner) :: Relayed EIP721', async function() {
+      const functionSignature = web3.eth.abi.encodeFunctionCall(
+        {
+          inputs: [
+            {
+              internalType: 'address',
+              name: '_royaltiesManager',
+              type: 'address'
+            }
+          ],
+          name: 'setRoyaltiesManager',
+          outputs: [],
+          stateMutability: 'nonpayable',
+          type: 'function'
+        },
+        [token.address]
+      )
+
+      await assertRevert(
+        sendMetaTx(
+          bidContract,
+          functionSignature,
+          holder,
+          relayer,
+          null,
+          domain,
+          version
+        )
       )
     })
   })
@@ -1698,7 +2194,7 @@ contract('Bid', function([
       console.log('----- Place bids for tokenOne & tokenTwo -----')
       await assertRevert(
         bidContract.getBidByBidder(token.address, tokenOne, anotherBidder),
-        'Invalid index'
+        'ERC721Bid#_getBid: INVALID_INDEX'
       )
 
       await placeMultipleBidsAndCheck(
@@ -1735,7 +2231,7 @@ contract('Bid', function([
 
       await assertRevert(
         bidContract.getBidByBidder(token.address, tokenOne, bidder),
-        'Bidder has not an active bid for this token'
+        'ERC721Bid#getBidByBidder: BIDDER_HAS_NOT_ACTIVE_BIDS_FOR_TOKEN'
       )
 
       let bid = await bidContract.getBidByBidder(
@@ -1771,7 +2267,7 @@ contract('Bid', function([
       expect(bidCounter).to.be.eq.BN(0)
       await assertRevert(
         bidContract.getBidByToken(token.address, tokenOne, 0),
-        'Invalid index'
+        'ERC721Bid#_getBid: INVALID_INDEX'
       )
 
       console.log('----- Cancel second tokenTwo bid -----')
@@ -1803,7 +2299,7 @@ contract('Bid', function([
       expect(bidCounter).to.be.eq.BN(0)
       await assertRevert(
         bidContract.getBidByToken(token.address, tokenTwo, 0),
-        'Invalid index'
+        'ERC721Bid#_getBid: INVALID_INDEX'
       )
 
       console.log('----- Return tokenOne to holder -----')
@@ -1871,12 +2367,12 @@ contract('Bid', function([
 
       await assertRevert(
         bidContract.getBidByBidder(token.address, tokenOne, bidder),
-        'Bidder has not an active bid for this token'
+        'ERC721Bid#getBidByBidder: BIDDER_HAS_NOT_ACTIVE_BIDS_FOR_TOKEN'
       )
 
       await assertRevert(
         bidContract.getBidByBidder(token.address, tokenOne, anotherBidder),
-        'Bidder has not an active bid for this token'
+        'ERC721Bid#getBidByBidder: BIDDER_HAS_NOT_ACTIVE_BIDS_FOR_TOKEN'
       )
 
       bid = await bidContract.getBidByBidder(
@@ -1926,12 +2422,12 @@ contract('Bid', function([
 
       await assertRevert(
         bidContract.getBidByBidder(token.address, tokenOne, bidder),
-        'Bidder has not an active bid for this token'
+        'ERC721Bid#getBidByBidder: BIDDER_HAS_NOT_ACTIVE_BIDS_FOR_TOKEN'
       )
 
       await assertRevert(
         bidContract.getBidByBidder(token.address, tokenOne, oneMoreBidder),
-        'Bidder has not an active bid for this token'
+        'ERC721Bid#getBidByBidder: BIDDER_HAS_NOT_ACTIVE_BIDS_FOR_TOKEN'
       )
 
       bid = await bidContract.getBidByBidder(

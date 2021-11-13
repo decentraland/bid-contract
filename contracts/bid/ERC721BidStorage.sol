@@ -103,8 +103,8 @@ contract ERC721BidStorage {
       address indexed _bidder
     );
 
-    event ChangedFeesCollectorCutPerMillion(uint256 feesCollectorCutPerMillion);
-    event ChangedRoyaltiesCutPerMillion(uint256 royaltiesCutPerMillion);
-    event FeesCollectorSet(address indexed oldFeesCollector, address indexed newFeesCollector);
-    event RoyaltiesManagerSet(IRoyaltiesManager indexed oldRoyaltiesManager, IRoyaltiesManager indexed newRoyaltiesManager);
+    event ChangedFeesCollectorCutPerMillion(uint256 _feesCollectorCutPerMillion);
+    event ChangedRoyaltiesCutPerMillion(uint256 _royaltiesCutPerMillion);
+    event FeesCollectorSet(address indexed _oldFeesCollector, address indexed _newFeesCollector);
+    event RoyaltiesManagerSet(IRoyaltiesManager indexed _oldRoyaltiesManager, IRoyaltiesManager indexed _newRoyaltiesManager);
 }
