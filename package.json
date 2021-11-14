@@ -49,6 +49,7 @@
     "mocha": "^3.5.3",
     "prettier": "^1.11.1",
     "semantic-release": "^15.13.3",
+    "solidity-coverage": "^0.7.17",
     "solidity-sha3": "^0.4.1",
     "solium": "^1.1.8",
     "truffle-hdwallet-provider": "0.0.3",
