@@ -100,6 +100,7 @@ contract('Bid', function([
   const tokenOne = '1'
   const tokenTwo = '2'
   const tokenThree = '3'
+  const tokenFour = '4'
   const unownedToken = '100'
   const price = web3.utils.toBN(web3.utils.toWei('100', 'ether'))
   const newPrice = web3.utils.toBN(web3.utils.toWei('10', 'ether'))
@@ -197,6 +198,7 @@ contract('Bid', function([
     await token.mint(holder, tokenOne)
     await token.mint(holder, tokenTwo)
     await token.mint(holder, tokenThree)
+    await token.mint(holder, tokenFour)
 
     await composableToken.mint(holder, tokenOne)
     await composableToken.mint(holder, tokenTwo)
@@ -1077,7 +1079,8 @@ contract('Bid', function([
           tokenOne,
           bidId,
           fromHolder
-        )
+        ),
+        'ERC721Bid#_getBid: INVALID_INDEX'
       )
     })
 
@@ -1147,7 +1150,8 @@ contract('Bid', function([
           tokenOne,
           bidId,
           fromHolder
-        )
+        ),
+        'ERC721Bid#onERC721Received: INVALID_BID'
       )
     })
 
@@ -1170,8 +1174,8 @@ contract('Bid', function([
     })
   })
 
-  describe.only('Fees', function() {
-    describe.skip('feesCollectorCutPerMillion', function() {
+  describe('Fees', function() {
+    describe('feesCollectorCutPerMillion', function() {
       it('should be initialized to 0', async function() {
         const response = await bidContract.feesCollectorCutPerMillion()
         response.should.be.eq.BN(0)
@@ -1302,7 +1306,7 @@ contract('Bid', function([
       })
     })
 
-    describe.skip('royaltiesCutPerMillion', function() {
+    describe('royaltiesCutPerMillion', function() {
       it('should be initialized to 0', async function() {
         const response = await bidContract.royaltiesCutPerMillion()
         response.should.be.eq.BN(0)
@@ -1512,6 +1516,755 @@ contract('Bid', function([
       expect(itemBeneficiaryBalance).to.be.eq.BN(0)
     })
 
+    it('should share sale :: set fees collector & royalties :: receiver 0 address by success return (check mocks/RoyaltiesManager) :: send cut to feesCollector', async function() {
+      let bidderBalance = await mana.balanceOf(bidder)
+      expect(bidderBalance).to.be.eq.BN(initialBalance)
+
+      let holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance).to.be.eq.BN(0)
+
+      let feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance).to.be.eq.BN(0)
+
+      let itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      let itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance).to.be.eq.BN(0)
+
+      // Set 20% of bid price
+      await bidContract.setFeesCollectorCutPerMillion(100000, fromOwner)
+      await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
+
+      await bidContract.placeBid(
+        token.address,
+        tokenThree,
+        price,
+        twoWeeksInSeconds,
+        fromBidder
+      )
+
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenThree, 0)
+      )[0]
+
+      await token.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenThree,
+        bidId,
+        fromHolder
+      )
+
+      const bidPrice = parseInt(price.toString())
+
+      const logs = await getEvents(bidContract, 'BidAccepted')
+      expect(logs.length).to.be.equal(1)
+      assertEvent(
+        { event: logs[0].event, args: logs[0].returnValues },
+        'BidAccepted',
+        {
+          _id: bidId,
+          _tokenAddress: token.address,
+          _tokenId: tokenThree,
+          _bidder: bidder,
+          _seller: holder,
+          _price: price.toString(),
+          _fee: (bidPrice * 0.2).toString()
+        }
+      )
+
+      bidderBalance = await mana.balanceOf(bidder)
+
+      scientificToDecimal(bidderBalance.toString()).should.be.equal(
+        scientificToDecimal(initialBalance.toString() - bidPrice)
+      )
+
+      holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance.toString()).to.be.equal(
+        (bidPrice - bidPrice * 0.2).toString()
+      )
+
+      feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance.toString()).to.be.equal(
+        (bidPrice * 0.2).toString()
+      )
+
+      itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance.toString()).to.be.eq.BN((0).toString())
+    })
+
+    it('should share sale :: set fees collector & royalties :: receiver 0 address by revert (check mocks/RoyaltiesManager) :: send cut to feesCollector', async function() {
+      let bidderBalance = await mana.balanceOf(bidder)
+      expect(bidderBalance).to.be.eq.BN(initialBalance)
+
+      let holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance).to.be.eq.BN(0)
+
+      let feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance).to.be.eq.BN(0)
+
+      let itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      let itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance).to.be.eq.BN(0)
+
+      // Set 20% of bid price
+      await bidContract.setFeesCollectorCutPerMillion(100000, fromOwner)
+      await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
+
+      await bidContract.placeBid(
+        token.address,
+        tokenFour,
+        price,
+        twoWeeksInSeconds,
+        fromBidder
+      )
+
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenFour, 0)
+      )[0]
+
+      await token.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenFour,
+        bidId,
+        fromHolder
+      )
+
+      const bidPrice = parseInt(price.toString())
+
+      const logs = await getEvents(bidContract, 'BidAccepted')
+      expect(logs.length).to.be.equal(1)
+      assertEvent(
+        { event: logs[0].event, args: logs[0].returnValues },
+        'BidAccepted',
+        {
+          _id: bidId,
+          _tokenAddress: token.address,
+          _tokenId: tokenFour,
+          _bidder: bidder,
+          _seller: holder,
+          _price: price.toString(),
+          _fee: (bidPrice * 0.2).toString()
+        }
+      )
+
+      bidderBalance = await mana.balanceOf(bidder)
+
+      scientificToDecimal(bidderBalance.toString()).should.be.equal(
+        scientificToDecimal(initialBalance.toString() - bidPrice)
+      )
+
+      holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance.toString()).to.be.equal(
+        (bidPrice - bidPrice * 0.2).toString()
+      )
+
+      feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance.toString()).to.be.equal(
+        (bidPrice * 0.2).toString()
+      )
+
+      itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance.toString()).to.be.eq.BN((0).toString())
+    })
+
+    it('should share sale :: set fees collector & royalties :: receiver 0 address by revert (not a valid royaltiesManager) :: send cut to feesCollector', async function() {
+      let bidderBalance = await mana.balanceOf(bidder)
+      expect(bidderBalance).to.be.eq.BN(initialBalance)
+
+      let holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance).to.be.eq.BN(0)
+
+      let feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance).to.be.eq.BN(0)
+
+      let itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      let itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance).to.be.eq.BN(0)
+
+      // Invalid Royalties Manager
+      await bidContract.setRoyaltiesManager(mana.address, fromOwner)
+      // Set 20% of bid price
+      await bidContract.setFeesCollectorCutPerMillion(100000, fromOwner)
+      await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
+
+      await bidContract.placeBid(
+        token.address,
+        tokenOne,
+        price,
+        twoWeeksInSeconds,
+        fromBidder
+      )
+
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
+
+      await token.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenOne,
+        bidId,
+        fromHolder
+      )
+
+      const bidPrice = parseInt(price.toString())
+
+      const logs = await getEvents(bidContract, 'BidAccepted')
+      expect(logs.length).to.be.equal(1)
+      assertEvent(
+        { event: logs[0].event, args: logs[0].returnValues },
+        'BidAccepted',
+        {
+          _id: bidId,
+          _tokenAddress: token.address,
+          _tokenId: tokenOne,
+          _bidder: bidder,
+          _seller: holder,
+          _price: price.toString(),
+          _fee: (bidPrice * 0.2).toString()
+        }
+      )
+
+      bidderBalance = await mana.balanceOf(bidder)
+
+      scientificToDecimal(bidderBalance.toString()).should.be.equal(
+        scientificToDecimal(initialBalance.toString() - bidPrice)
+      )
+
+      holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance.toString()).to.be.equal(
+        (bidPrice - bidPrice * 0.2).toString()
+      )
+
+      feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance.toString()).to.be.equal(
+        (bidPrice * 0.2).toString()
+      )
+
+      itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance.toString()).to.be.eq.BN((0).toString())
+    })
+
+    it('should share sale :: set royalties :: receiver 0 address by success return (check mocks/RoyaltiesManager) :: send cut to feesCollector', async function() {
+      let bidderBalance = await mana.balanceOf(bidder)
+      expect(bidderBalance).to.be.eq.BN(initialBalance)
+
+      let holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance).to.be.eq.BN(0)
+
+      let feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance).to.be.eq.BN(0)
+
+      let itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      let itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance).to.be.eq.BN(0)
+
+      // Set 10% of bid price
+      await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
+
+      await bidContract.placeBid(
+        token.address,
+        tokenThree,
+        price,
+        twoWeeksInSeconds,
+        fromBidder
+      )
+
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenThree, 0)
+      )[0]
+
+      await token.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenThree,
+        bidId,
+        fromHolder
+      )
+
+      const bidPrice = parseInt(price.toString())
+
+      const logs = await getEvents(bidContract, 'BidAccepted')
+      expect(logs.length).to.be.equal(1)
+      assertEvent(
+        { event: logs[0].event, args: logs[0].returnValues },
+        'BidAccepted',
+        {
+          _id: bidId,
+          _tokenAddress: token.address,
+          _tokenId: tokenThree,
+          _bidder: bidder,
+          _seller: holder,
+          _price: price.toString(),
+          _fee: (bidPrice * 0.1).toString()
+        }
+      )
+
+      bidderBalance = await mana.balanceOf(bidder)
+
+      scientificToDecimal(bidderBalance.toString()).should.be.equal(
+        scientificToDecimal(initialBalance.toString() - bidPrice)
+      )
+
+      holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance.toString()).to.be.equal(
+        (bidPrice - bidPrice * 0.1).toString()
+      )
+
+      feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance.toString()).to.be.equal(
+        (bidPrice * 0.1).toString()
+      )
+
+      itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance.toString()).to.be.eq.BN(
+        (bidPrice * 0.0).toString()
+      )
+
+      itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance.toString()).to.be.eq.BN(
+        (bidPrice * 0.0).toString()
+      )
+    })
+
+    it('should share sale :: set royalties :: receiver 0 address by revert (check mocks/RoyaltiesManager) :: send cut to feesCollector', async function() {
+      let bidderBalance = await mana.balanceOf(bidder)
+      expect(bidderBalance).to.be.eq.BN(initialBalance)
+
+      let holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance).to.be.eq.BN(0)
+
+      let feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance).to.be.eq.BN(0)
+
+      let itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      let itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance).to.be.eq.BN(0)
+
+      // Set 10% of bid price
+      await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
+
+      await bidContract.placeBid(
+        token.address,
+        tokenFour,
+        price,
+        twoWeeksInSeconds,
+        fromBidder
+      )
+
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenFour, 0)
+      )[0]
+
+      await token.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenFour,
+        bidId,
+        fromHolder
+      )
+
+      const bidPrice = parseInt(price.toString())
+
+      const logs = await getEvents(bidContract, 'BidAccepted')
+      expect(logs.length).to.be.equal(1)
+      assertEvent(
+        { event: logs[0].event, args: logs[0].returnValues },
+        'BidAccepted',
+        {
+          _id: bidId,
+          _tokenAddress: token.address,
+          _tokenId: tokenFour,
+          _bidder: bidder,
+          _seller: holder,
+          _price: price.toString(),
+          _fee: (bidPrice * 0.1).toString()
+        }
+      )
+
+      bidderBalance = await mana.balanceOf(bidder)
+
+      scientificToDecimal(bidderBalance.toString()).should.be.equal(
+        scientificToDecimal(initialBalance.toString() - bidPrice)
+      )
+
+      holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance.toString()).to.be.equal(
+        (bidPrice - bidPrice * 0.1).toString()
+      )
+
+      feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance.toString()).to.be.equal(
+        (bidPrice * 0.1).toString()
+      )
+
+      itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance.toString()).to.be.eq.BN(
+        (bidPrice * 0.0).toString()
+      )
+
+      itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance.toString()).to.be.eq.BN(
+        (bidPrice * 0.0).toString()
+      )
+    })
+
+    it('should share sale :: set royalties :: receiver 0 address by revert (not a valid royaltiesManager) :: send cut to feesCollector', async function() {
+      let bidderBalance = await mana.balanceOf(bidder)
+      expect(bidderBalance).to.be.eq.BN(initialBalance)
+
+      let holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance).to.be.eq.BN(0)
+
+      let feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance).to.be.eq.BN(0)
+
+      let itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      let itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance).to.be.eq.BN(0)
+
+      // Invalid Royalties Manager
+      await bidContract.setRoyaltiesManager(mana.address, fromOwner)
+      // Set 10% of bid price
+      await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
+
+      await bidContract.placeBid(
+        token.address,
+        tokenOne,
+        price,
+        twoWeeksInSeconds,
+        fromBidder
+      )
+
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
+
+      await token.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenOne,
+        bidId,
+        fromHolder
+      )
+
+      const bidPrice = parseInt(price.toString())
+
+      const logs = await getEvents(bidContract, 'BidAccepted')
+      expect(logs.length).to.be.equal(1)
+      assertEvent(
+        { event: logs[0].event, args: logs[0].returnValues },
+        'BidAccepted',
+        {
+          _id: bidId,
+          _tokenAddress: token.address,
+          _tokenId: tokenOne,
+          _bidder: bidder,
+          _seller: holder,
+          _price: price.toString(),
+          _fee: (bidPrice * 0.1).toString()
+        }
+      )
+
+      bidderBalance = await mana.balanceOf(bidder)
+
+      scientificToDecimal(bidderBalance.toString()).should.be.equal(
+        scientificToDecimal(initialBalance.toString() - bidPrice)
+      )
+
+      holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance.toString()).to.be.equal(
+        (bidPrice - bidPrice * 0.1).toString()
+      )
+
+      feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance.toString()).to.be.equal(
+        (bidPrice * 0.1).toString()
+      )
+
+      itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance.toString()).to.be.eq.BN(
+        (bidPrice * 0.0).toString()
+      )
+
+      itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance.toString()).to.be.eq.BN(
+        (bidPrice * 0.0).toString()
+      )
+    })
+
+    it('should share sale :: set royalties :: receiver item creator :: send cut to royaltiesReceiver', async function() {
+      let bidderBalance = await mana.balanceOf(bidder)
+      expect(bidderBalance).to.be.eq.BN(initialBalance)
+
+      let holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance).to.be.eq.BN(0)
+
+      let feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance).to.be.eq.BN(0)
+
+      let itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      let itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance).to.be.eq.BN(0)
+
+      // Set 10% of bid price
+      await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
+
+      await bidContract.placeBid(
+        token.address,
+        tokenOne,
+        price,
+        twoWeeksInSeconds,
+        fromBidder
+      )
+
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
+
+      await token.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenOne,
+        bidId,
+        fromHolder
+      )
+
+      const bidPrice = parseInt(price.toString())
+
+      const logs = await getEvents(bidContract, 'BidAccepted')
+      expect(logs.length).to.be.equal(1)
+      assertEvent(
+        { event: logs[0].event, args: logs[0].returnValues },
+        'BidAccepted',
+        {
+          _id: bidId,
+          _tokenAddress: token.address,
+          _tokenId: tokenOne,
+          _bidder: bidder,
+          _seller: holder,
+          _price: price.toString(),
+          _fee: (bidPrice * 0.1).toString()
+        }
+      )
+
+      bidderBalance = await mana.balanceOf(bidder)
+
+      scientificToDecimal(bidderBalance.toString()).should.be.equal(
+        scientificToDecimal(initialBalance.toString() - bidPrice)
+      )
+
+      holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance.toString()).to.be.equal(
+        (bidPrice - bidPrice * 0.1).toString()
+      )
+
+      feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance.toString()).to.be.equal(
+        (bidPrice * 0).toString()
+      )
+
+      itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance.toString()).to.be.eq.BN(
+        (bidPrice * 0.1).toString()
+      )
+
+      itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance.toString()).to.be.eq.BN((0).toString())
+    })
+
+    it('should share sale :: set royalties :: receiver item beneficiary :: send cut to royaltiesReceiver', async function() {
+      let bidderBalance = await mana.balanceOf(bidder)
+      expect(bidderBalance).to.be.eq.BN(initialBalance)
+
+      let holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance).to.be.eq.BN(0)
+
+      let feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance).to.be.eq.BN(0)
+
+      let itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      let itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance).to.be.eq.BN(0)
+
+      // Set 10% of bid price
+      await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
+
+      await bidContract.placeBid(
+        token.address,
+        tokenTwo,
+        price,
+        twoWeeksInSeconds,
+        fromBidder
+      )
+
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenTwo, 0)
+      )[0]
+
+      await token.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenTwo,
+        bidId,
+        fromHolder
+      )
+
+      const bidPrice = parseInt(price.toString())
+
+      const logs = await getEvents(bidContract, 'BidAccepted')
+      expect(logs.length).to.be.equal(1)
+      assertEvent(
+        { event: logs[0].event, args: logs[0].returnValues },
+        'BidAccepted',
+        {
+          _id: bidId,
+          _tokenAddress: token.address,
+          _tokenId: tokenTwo,
+          _bidder: bidder,
+          _seller: holder,
+          _price: price.toString(),
+          _fee: (bidPrice * 0.1).toString()
+        }
+      )
+
+      bidderBalance = await mana.balanceOf(bidder)
+
+      scientificToDecimal(bidderBalance.toString()).should.be.equal(
+        scientificToDecimal(initialBalance.toString() - bidPrice)
+      )
+
+      holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance.toString()).to.be.equal(
+        (bidPrice - bidPrice * 0.1).toString()
+      )
+
+      feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance.toString()).to.be.equal(
+        (bidPrice * 0).toString()
+      )
+
+      itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance.toString()).to.be.eq.BN(
+        (bidPrice * 0.0).toString()
+      )
+
+      itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance.toString()).to.be.eq.BN(
+        (bidPrice * 0.1).toString()
+      )
+    })
+
+    it('should share sale :: set royalties :: receiver item beneficiary :: send cut to royaltiesReceiver', async function() {
+      let bidderBalance = await mana.balanceOf(bidder)
+      expect(bidderBalance).to.be.eq.BN(initialBalance)
+
+      let holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance).to.be.eq.BN(0)
+
+      let feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance).to.be.eq.BN(0)
+
+      let itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      let itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance).to.be.eq.BN(0)
+
+      // Set 10% of bid price
+      await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
+
+      await bidContract.placeBid(
+        token.address,
+        tokenTwo,
+        price,
+        twoWeeksInSeconds,
+        fromBidder
+      )
+
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenTwo, 0)
+      )[0]
+
+      await token.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenTwo,
+        bidId,
+        fromHolder
+      )
+
+      const bidPrice = parseInt(price.toString())
+
+      const logs = await getEvents(bidContract, 'BidAccepted')
+      expect(logs.length).to.be.equal(1)
+      assertEvent(
+        { event: logs[0].event, args: logs[0].returnValues },
+        'BidAccepted',
+        {
+          _id: bidId,
+          _tokenAddress: token.address,
+          _tokenId: tokenTwo,
+          _bidder: bidder,
+          _seller: holder,
+          _price: price.toString(),
+          _fee: (bidPrice * 0.1).toString()
+        }
+      )
+
+      bidderBalance = await mana.balanceOf(bidder)
+
+      scientificToDecimal(bidderBalance.toString()).should.be.equal(
+        scientificToDecimal(initialBalance.toString() - bidPrice)
+      )
+
+      holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance.toString()).to.be.equal(
+        (bidPrice - bidPrice * 0.1).toString()
+      )
+
+      feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance.toString()).to.be.equal(
+        (bidPrice * 0).toString()
+      )
+
+      itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance.toString()).to.be.eq.BN(
+        (bidPrice * 0.0).toString()
+      )
+
+      itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance.toString()).to.be.eq.BN(
+        (bidPrice * 0.1).toString()
+      )
+    })
+
     it('should share sale :: set fees collector & royalties :: valid creator :: send cut to feesCollector & royaltiesReceiver', async function() {
       let bidderBalance = await mana.balanceOf(bidder)
       expect(bidderBalance).to.be.eq.BN(initialBalance)
@@ -1674,87 +2427,6 @@ contract('Bid', function([
       expect(itemBeneficiaryBalance.toString()).to.be.eq.BN(
         (bidPrice * 0.1).toString()
       )
-    })
-
-    it('should share sale :: set fees collector & royalties :: receiver 0 address :: send cut to feesCollector', async function() {
-      let bidderBalance = await mana.balanceOf(bidder)
-      expect(bidderBalance).to.be.eq.BN(initialBalance)
-
-      let holderBalance = await mana.balanceOf(holder)
-      expect(holderBalance).to.be.eq.BN(0)
-
-      let feesCollectorBalance = await mana.balanceOf(feesCollector)
-      expect(feesCollectorBalance).to.be.eq.BN(0)
-
-      let itemCreatorBalance = await mana.balanceOf(itemCreator)
-      expect(itemCreatorBalance).to.be.eq.BN(0)
-
-      let itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
-      expect(itemBeneficiaryBalance).to.be.eq.BN(0)
-
-      // Set 20% of bid price
-      await bidContract.setFeesCollectorCutPerMillion(100000, fromOwner)
-      await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
-
-      await bidContract.placeBid(
-        token.address,
-        tokenThree,
-        price,
-        twoWeeksInSeconds,
-        fromBidder
-      )
-
-      const bidId = (
-        await bidContract.getBidByToken(token.address, tokenThree, 0)
-      )[0]
-
-      await token.safeTransferFromWithBytes(
-        holder,
-        bidContract.address,
-        tokenThree,
-        bidId,
-        fromHolder
-      )
-
-      const bidPrice = parseInt(price.toString())
-
-      const logs = await getEvents(bidContract, 'BidAccepted')
-      expect(logs.length).to.be.equal(1)
-      assertEvent(
-        { event: logs[0].event, args: logs[0].returnValues },
-        'BidAccepted',
-        {
-          _id: bidId,
-          _tokenAddress: token.address,
-          _tokenId: tokenThree,
-          _bidder: bidder,
-          _seller: holder,
-          _price: price.toString(),
-          _fee: (bidPrice * 0.2).toString()
-        }
-      )
-
-      bidderBalance = await mana.balanceOf(bidder)
-
-      scientificToDecimal(bidderBalance.toString()).should.be.equal(
-        scientificToDecimal(initialBalance.toString() - bidPrice)
-      )
-
-      holderBalance = await mana.balanceOf(holder)
-      expect(holderBalance.toString()).to.be.equal(
-        (bidPrice - bidPrice * 0.2).toString()
-      )
-
-      feesCollectorBalance = await mana.balanceOf(feesCollector)
-      expect(feesCollectorBalance.toString()).to.be.equal(
-        (bidPrice * 0.2).toString()
-      )
-
-      itemCreatorBalance = await mana.balanceOf(itemCreator)
-      expect(itemCreatorBalance).to.be.eq.BN(0)
-
-      itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
-      expect(itemBeneficiaryBalance.toString()).to.be.eq.BN((0).toString())
     })
   })
 
