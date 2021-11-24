@@ -5,3 +5,5 @@ node_modules
 artifacts
 cache
 .env
+coverage
+coverage.json
