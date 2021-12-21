@@ -224,7 +224,7 @@ library Address {
 
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.10;
+pragma solidity ^0.8.0;
 
 
 contract ContextMixin {
@@ -418,7 +418,7 @@ abstract contract Pausable is ContextMixin {
 
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.10;
+pragma solidity ^0.8.0;
 
 
 contract EIP712Base {
@@ -488,7 +488,7 @@ contract EIP712Base {
 
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.10;
+pragma solidity ^0.8.0;
 
 contract NativeMetaTransaction is EIP712Base {
     bytes32 private constant META_TRANSACTION_TYPEHASH = keccak256(
@@ -594,7 +594,7 @@ contract NativeMetaTransaction is EIP712Base {
 
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.10;
+pragma solidity ^0.8.0;
 
 
 /**
@@ -701,7 +701,7 @@ contract ERC721BidStorage {
 
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.10;
+pragma solidity ^0.8.0;
 
 
 

@@ -111,9 +111,7 @@ contract('Bid', function([
   const version = '2'
 
   const creationParams = {
-    ...fromOwner,
-    gas: 6e6,
-    gasPrice: 21e9
+    ...fromOwner
   }
 
   async function placeAndCheckBid(

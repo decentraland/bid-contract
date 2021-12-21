@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.10;
+pragma solidity ^0.8.0;
 
 contract RoyaltiesManager {
 
@@ -10,7 +10,7 @@ contract RoyaltiesManager {
     beneficiaries = _beneficiaries;
   }
 
-  function getRoyaltiesReceiver(address _contractAddress, uint256 _tokenId) external view returns(address royaltiesReceiver) {
+  function getRoyaltiesReceiver(address /*_contractAddress*/, uint256 _tokenId) external view returns(address royaltiesReceiver) {
     if (_tokenId == 1) {
       return beneficiaries[0];
     } if (_tokenId == 2) {
