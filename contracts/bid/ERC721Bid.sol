@@ -270,7 +270,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction
             (bool success, bytes memory res) = address(royaltiesManager).staticcall(
                 abi.encodeWithSelector(
                     royaltiesManager.getRoyaltiesReceiver.selector,
-                    address(this),
+                    msg.sender,
                     _tokenId
                 )
             );
