@@ -17,6 +17,7 @@ const erc20 = artifacts.require('FakeERC20')
 const Token = artifacts.require('Token')
 const ComposableToken = artifacts.require('ComposableToken')
 const TokenWithoutInterface = artifacts.require('TokenWithoutInterface')
+const ERC721TestCollection = artifacts.require('ERC721TestCollection')
 
 const zeroAddress = '0x0000000000000000000000000000000000000000'
 
@@ -89,6 +90,7 @@ contract('Bid', function([
   let token
   let composableToken
   let tokenWithoutInterface
+  let erc721TestCollection
 
   const fromOwner = { from: owner }
   const fromHolder = { from: holder }
@@ -171,13 +173,9 @@ contract('Bid', function([
     token = await Token.new(creationParams)
     composableToken = await ComposableToken.new(creationParams)
     tokenWithoutInterface = await TokenWithoutInterface.new(creationParams)
+    erc721TestCollection = await ERC721TestCollection.new(creationParams)
 
-    royaltiesManager = await RoyaltiesManager.new(
-      [itemCreator, itemBeneficiary],
-      {
-        from: owner
-      }
-    )
+    royaltiesManager = await RoyaltiesManager.new(creationParams)
 
     bidContract = await BidContract.new(
       owner,
@@ -200,6 +198,11 @@ contract('Bid', function([
 
     await composableToken.mint(holder, tokenOne)
     await composableToken.mint(holder, tokenTwo)
+
+    await erc721TestCollection.mint(holder, tokenOne)
+    await erc721TestCollection.mint(holder, tokenTwo)
+    await erc721TestCollection.mint(holder, tokenThree)
+    await erc721TestCollection.mint(holder, tokenFour)
 
     await mana.approve(bidContract.address, initialBalance, fromBidder)
     await mana.approve(bidContract.address, initialBalance, fromAnotherBidder)
@@ -1453,7 +1456,7 @@ contract('Bid', function([
       await bidContract.setFeesCollectorCutPerMillion(100000, fromOwner)
 
       await bidContract.placeBid(
-        token.address,
+        erc721TestCollection.address,
         tokenOne,
         price,
         twoWeeksInSeconds,
@@ -1461,10 +1464,14 @@ contract('Bid', function([
       )
 
       const bidId = (
-        await bidContract.getBidByToken(token.address, tokenOne, 0)
+        await bidContract.getBidByToken(
+          erc721TestCollection.address,
+          tokenOne,
+          0
+        )
       )[0]
 
-      await token.safeTransferFromWithBytes(
+      await erc721TestCollection.safeTransferFromWithBytes(
         holder,
         bidContract.address,
         tokenOne,
@@ -1482,7 +1489,7 @@ contract('Bid', function([
         'BidAccepted',
         {
           _id: bidId,
-          _tokenAddress: token.address,
+          _tokenAddress: erc721TestCollection.address,
           _tokenId: tokenOne,
           _bidder: bidder,
           _seller: holder,
@@ -1515,6 +1522,9 @@ contract('Bid', function([
     })
 
     it('should share sale :: set fees collector & royalties :: receiver 0 address by success return (check mocks/RoyaltiesManager) :: send cut to feesCollector', async function() {
+      await erc721TestCollection.setCreator(zeroAddress)
+      await erc721TestCollection.setBeneficiary(zeroAddress)
+
       let bidderBalance = await mana.balanceOf(bidder)
       expect(bidderBalance).to.be.eq.BN(initialBalance)
 
@@ -1535,7 +1545,7 @@ contract('Bid', function([
       await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
 
       await bidContract.placeBid(
-        token.address,
+        erc721TestCollection.address,
         tokenThree,
         price,
         twoWeeksInSeconds,
@@ -1543,10 +1553,14 @@ contract('Bid', function([
       )
 
       const bidId = (
-        await bidContract.getBidByToken(token.address, tokenThree, 0)
+        await bidContract.getBidByToken(
+          erc721TestCollection.address,
+          tokenThree,
+          0
+        )
       )[0]
 
-      await token.safeTransferFromWithBytes(
+      await erc721TestCollection.safeTransferFromWithBytes(
         holder,
         bidContract.address,
         tokenThree,
@@ -1563,7 +1577,7 @@ contract('Bid', function([
         'BidAccepted',
         {
           _id: bidId,
-          _tokenAddress: token.address,
+          _tokenAddress: erc721TestCollection.address,
           _tokenId: tokenThree,
           _bidder: bidder,
           _seller: holder,
@@ -1699,7 +1713,7 @@ contract('Bid', function([
       await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
 
       await bidContract.placeBid(
-        token.address,
+        erc721TestCollection.address,
         tokenOne,
         price,
         twoWeeksInSeconds,
@@ -1707,10 +1721,14 @@ contract('Bid', function([
       )
 
       const bidId = (
-        await bidContract.getBidByToken(token.address, tokenOne, 0)
+        await bidContract.getBidByToken(
+          erc721TestCollection.address,
+          tokenOne,
+          0
+        )
       )[0]
 
-      await token.safeTransferFromWithBytes(
+      await erc721TestCollection.safeTransferFromWithBytes(
         holder,
         bidContract.address,
         tokenOne,
@@ -1727,7 +1745,7 @@ contract('Bid', function([
         'BidAccepted',
         {
           _id: bidId,
-          _tokenAddress: token.address,
+          _tokenAddress: erc721TestCollection.address,
           _tokenId: tokenOne,
           _bidder: bidder,
           _seller: holder,
@@ -1760,6 +1778,9 @@ contract('Bid', function([
     })
 
     it('should share sale :: set royalties :: receiver 0 address by success return (check mocks/RoyaltiesManager) :: send cut to feesCollector', async function() {
+      await erc721TestCollection.setCreator(zeroAddress)
+      await erc721TestCollection.setBeneficiary(zeroAddress)
+
       let bidderBalance = await mana.balanceOf(bidder)
       expect(bidderBalance).to.be.eq.BN(initialBalance)
 
@@ -1779,7 +1800,7 @@ contract('Bid', function([
       await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
 
       await bidContract.placeBid(
-        token.address,
+        erc721TestCollection.address,
         tokenThree,
         price,
         twoWeeksInSeconds,
@@ -1787,10 +1808,14 @@ contract('Bid', function([
       )
 
       const bidId = (
-        await bidContract.getBidByToken(token.address, tokenThree, 0)
+        await bidContract.getBidByToken(
+          erc721TestCollection.address,
+          tokenThree,
+          0
+        )
       )[0]
 
-      await token.safeTransferFromWithBytes(
+      await erc721TestCollection.safeTransferFromWithBytes(
         holder,
         bidContract.address,
         tokenThree,
@@ -1807,7 +1832,7 @@ contract('Bid', function([
         'BidAccepted',
         {
           _id: bidId,
-          _tokenAddress: token.address,
+          _tokenAddress: erc721TestCollection.address,
           _tokenId: tokenThree,
           _bidder: bidder,
           _seller: holder,
@@ -1949,7 +1974,7 @@ contract('Bid', function([
       await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
 
       await bidContract.placeBid(
-        token.address,
+        erc721TestCollection.address,
         tokenOne,
         price,
         twoWeeksInSeconds,
@@ -1957,10 +1982,14 @@ contract('Bid', function([
       )
 
       const bidId = (
-        await bidContract.getBidByToken(token.address, tokenOne, 0)
+        await bidContract.getBidByToken(
+          erc721TestCollection.address,
+          tokenOne,
+          0
+        )
       )[0]
 
-      await token.safeTransferFromWithBytes(
+      await erc721TestCollection.safeTransferFromWithBytes(
         holder,
         bidContract.address,
         tokenOne,
@@ -1977,7 +2006,7 @@ contract('Bid', function([
         'BidAccepted',
         {
           _id: bidId,
-          _tokenAddress: token.address,
+          _tokenAddress: erc721TestCollection.address,
           _tokenId: tokenOne,
           _bidder: bidder,
           _seller: holder,
@@ -2014,6 +2043,9 @@ contract('Bid', function([
     })
 
     it('should share sale :: set royalties :: receiver item creator :: send cut to royaltiesReceiver', async function() {
+      await erc721TestCollection.setCreator(itemCreator)
+      await erc721TestCollection.setBeneficiary(zeroAddress)
+
       let bidderBalance = await mana.balanceOf(bidder)
       expect(bidderBalance).to.be.eq.BN(initialBalance)
 
@@ -2033,7 +2065,7 @@ contract('Bid', function([
       await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
 
       await bidContract.placeBid(
-        token.address,
+        erc721TestCollection.address,
         tokenOne,
         price,
         twoWeeksInSeconds,
@@ -2041,10 +2073,14 @@ contract('Bid', function([
       )
 
       const bidId = (
-        await bidContract.getBidByToken(token.address, tokenOne, 0)
+        await bidContract.getBidByToken(
+          erc721TestCollection.address,
+          tokenOne,
+          0
+        )
       )[0]
 
-      await token.safeTransferFromWithBytes(
+      await erc721TestCollection.safeTransferFromWithBytes(
         holder,
         bidContract.address,
         tokenOne,
@@ -2061,7 +2097,7 @@ contract('Bid', function([
         'BidAccepted',
         {
           _id: bidId,
-          _tokenAddress: token.address,
+          _tokenAddress: erc721TestCollection.address,
           _tokenId: tokenOne,
           _bidder: bidder,
           _seller: holder,
@@ -2096,6 +2132,9 @@ contract('Bid', function([
     })
 
     it('should share sale :: set royalties :: receiver item beneficiary :: send cut to royaltiesReceiver', async function() {
+      await erc721TestCollection.setCreator(itemCreator)
+      await erc721TestCollection.setBeneficiary(itemBeneficiary)
+
       let bidderBalance = await mana.balanceOf(bidder)
       expect(bidderBalance).to.be.eq.BN(initialBalance)
 
@@ -2115,7 +2154,7 @@ contract('Bid', function([
       await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
 
       await bidContract.placeBid(
-        token.address,
+        erc721TestCollection.address,
         tokenTwo,
         price,
         twoWeeksInSeconds,
@@ -2123,10 +2162,14 @@ contract('Bid', function([
       )
 
       const bidId = (
-        await bidContract.getBidByToken(token.address, tokenTwo, 0)
+        await bidContract.getBidByToken(
+          erc721TestCollection.address,
+          tokenTwo,
+          0
+        )
       )[0]
 
-      await token.safeTransferFromWithBytes(
+      await erc721TestCollection.safeTransferFromWithBytes(
         holder,
         bidContract.address,
         tokenTwo,
@@ -2143,7 +2186,7 @@ contract('Bid', function([
         'BidAccepted',
         {
           _id: bidId,
-          _tokenAddress: token.address,
+          _tokenAddress: erc721TestCollection.address,
           _tokenId: tokenTwo,
           _bidder: bidder,
           _seller: holder,
@@ -2180,6 +2223,9 @@ contract('Bid', function([
     })
 
     it('should share sale :: set royalties :: receiver item beneficiary :: send cut to royaltiesReceiver', async function() {
+      await erc721TestCollection.setCreator(itemCreator)
+      await erc721TestCollection.setBeneficiary(itemBeneficiary)
+
       let bidderBalance = await mana.balanceOf(bidder)
       expect(bidderBalance).to.be.eq.BN(initialBalance)
 
@@ -2199,7 +2245,7 @@ contract('Bid', function([
       await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
 
       await bidContract.placeBid(
-        token.address,
+        erc721TestCollection.address,
         tokenTwo,
         price,
         twoWeeksInSeconds,
@@ -2207,10 +2253,14 @@ contract('Bid', function([
       )
 
       const bidId = (
-        await bidContract.getBidByToken(token.address, tokenTwo, 0)
+        await bidContract.getBidByToken(
+          erc721TestCollection.address,
+          tokenTwo,
+          0
+        )
       )[0]
 
-      await token.safeTransferFromWithBytes(
+      await erc721TestCollection.safeTransferFromWithBytes(
         holder,
         bidContract.address,
         tokenTwo,
@@ -2227,7 +2277,7 @@ contract('Bid', function([
         'BidAccepted',
         {
           _id: bidId,
-          _tokenAddress: token.address,
+          _tokenAddress: erc721TestCollection.address,
           _tokenId: tokenTwo,
           _bidder: bidder,
           _seller: holder,
@@ -2264,6 +2314,9 @@ contract('Bid', function([
     })
 
     it('should share sale :: set fees collector & royalties :: valid creator :: send cut to feesCollector & royaltiesReceiver', async function() {
+      await erc721TestCollection.setCreator(itemCreator)
+      await erc721TestCollection.setBeneficiary(zeroAddress)
+
       let bidderBalance = await mana.balanceOf(bidder)
       expect(bidderBalance).to.be.eq.BN(initialBalance)
 
@@ -2284,7 +2337,7 @@ contract('Bid', function([
       await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
 
       await bidContract.placeBid(
-        token.address,
+        erc721TestCollection.address,
         tokenOne,
         price,
         twoWeeksInSeconds,
@@ -2292,10 +2345,14 @@ contract('Bid', function([
       )
 
       const bidId = (
-        await bidContract.getBidByToken(token.address, tokenOne, 0)
+        await bidContract.getBidByToken(
+          erc721TestCollection.address,
+          tokenOne,
+          0
+        )
       )[0]
 
-      await token.safeTransferFromWithBytes(
+      await erc721TestCollection.safeTransferFromWithBytes(
         holder,
         bidContract.address,
         tokenOne,
@@ -2312,7 +2369,7 @@ contract('Bid', function([
         'BidAccepted',
         {
           _id: bidId,
-          _tokenAddress: token.address,
+          _tokenAddress: erc721TestCollection.address,
           _tokenId: tokenOne,
           _bidder: bidder,
           _seller: holder,
@@ -2345,6 +2402,9 @@ contract('Bid', function([
     })
 
     it('should share sale :: set fees collector & royalties :: valid beneficiary :: send cut to feesCollector & royaltiesReceiver', async function() {
+      await erc721TestCollection.setCreator(itemCreator)
+      await erc721TestCollection.setBeneficiary(itemBeneficiary)
+
       let bidderBalance = await mana.balanceOf(bidder)
       expect(bidderBalance).to.be.eq.BN(initialBalance)
 
@@ -2365,7 +2425,7 @@ contract('Bid', function([
       await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
 
       await bidContract.placeBid(
-        token.address,
+        erc721TestCollection.address,
         tokenTwo,
         price,
         twoWeeksInSeconds,
@@ -2373,10 +2433,14 @@ contract('Bid', function([
       )
 
       const bidId = (
-        await bidContract.getBidByToken(token.address, tokenTwo, 0)
+        await bidContract.getBidByToken(
+          erc721TestCollection.address,
+          tokenTwo,
+          0
+        )
       )[0]
 
-      await token.safeTransferFromWithBytes(
+      await erc721TestCollection.safeTransferFromWithBytes(
         holder,
         bidContract.address,
         tokenTwo,
@@ -2393,7 +2457,7 @@ contract('Bid', function([
         'BidAccepted',
         {
           _id: bidId,
-          _tokenAddress: token.address,
+          _tokenAddress: erc721TestCollection.address,
           _tokenId: tokenTwo,
           _bidder: bidder,
           _seller: holder,
