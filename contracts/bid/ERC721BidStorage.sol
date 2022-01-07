@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.7.6;
+pragma solidity ^0.8.0;
+
+import "../interfaces/IRoyaltiesManager.sol";
 
 
 /**
@@ -64,12 +66,14 @@ contract ERC721BidStorage {
     // Index of the bid at bidsByToken mapping by bid id => bid index
     mapping(bytes32 => uint256) public bidIndexByBidId;
     // Bid id by token address => token id => bidder address => bidId
-    mapping(address => mapping(uint256 => mapping(address => bytes32)))
-    public
-    bidIdByTokenAndBidder;
+    mapping(address => mapping(uint256 => mapping(address => bytes32))) public bidIdByTokenAndBidder;
 
 
-    uint256 public ownerCutPerMillion;
+    address public feesCollector;
+    IRoyaltiesManager public royaltiesManager;
+
+    uint256 public feesCollectorCutPerMillion;
+    uint256 public royaltiesCutPerMillion;
 
     // EVENTS
     event BidCreated(
@@ -99,5 +103,8 @@ contract ERC721BidStorage {
       address indexed _bidder
     );
 
-    event ChangedOwnerCutPerMillion(uint256 _ownerCutPerMillion);
+    event ChangedFeesCollectorCutPerMillion(uint256 _feesCollectorCutPerMillion);
+    event ChangedRoyaltiesCutPerMillion(uint256 _royaltiesCutPerMillion);
+    event FeesCollectorSet(address indexed _oldFeesCollector, address indexed _newFeesCollector);
+    event RoyaltiesManagerSet(IRoyaltiesManager indexed _oldRoyaltiesManager, IRoyaltiesManager indexed _newRoyaltiesManager);
 }

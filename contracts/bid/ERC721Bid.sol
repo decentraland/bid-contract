@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.7.6;
+pragma solidity ^0.8.0;
 
-import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 
 import "../commons/Ownable.sol";
@@ -13,20 +12,35 @@ import "./ERC721BidStorage.sol";
 
 
 contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction {
-    using SafeMath for uint256;
     using Address for address;
 
     /**
     * @dev Constructor of the contract.
-    * @param _manaToken - address of the mana token
-    * @param _owner - address of the owner for the contract
+    * @param _owner - owner
+    * @param _feesCollector - fees collector
+    * @param _manaToken - Address of the ERC20 accepted for this marketplace
+    * @param _royaltiesManager - Royalties manager contract
+    * @param _feesCollectorCutPerMillion - fees collector cut per million
+    * @param _royaltiesCutPerMillion - royalties cut per million
     */
-    constructor(address _manaToken, address _owner, uint256 _ownerCutPerMillion) Ownable() Pausable() {
+    constructor(
+        address _owner,
+        address _feesCollector,
+        address _manaToken,
+        IRoyaltiesManager _royaltiesManager,
+        uint256 _feesCollectorCutPerMillion,
+        uint256 _royaltiesCutPerMillion
+    ) Pausable() {
          // EIP712 init
-        _initializeEIP712('Decentraland Bid', '1');
+        _initializeEIP712('Decentraland Bid', '2');
 
-         // Fee init
-        setOwnerCutPerMillion(_ownerCutPerMillion);
+        // Address init
+        setFeesCollector(_feesCollector);
+        setRoyaltiesManager(_royaltiesManager);
+
+        // Fee init
+        setFeesCollectorCutPerMillion(_feesCollectorCutPerMillion);
+        setRoyaltiesCutPerMillion(_royaltiesCutPerMillion);
 
         manaToken = ERC20Interface(_manaToken);
         // Set owner
@@ -109,28 +123,28 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction
         _requireComposableERC721(_tokenAddress, _tokenId, _fingerprint);
         address sender = _msgSender();
 
-        require(_price > 0, "Price should be bigger than 0");
+        require(_price > 0, "ERC721Bid#_placeBid: PRICE_MUST_BE_GT_0");
 
         _requireBidderBalance(sender, _price);
 
         require(
             _duration >= MIN_BID_DURATION,
-            "The bid should last at least one minute"
+            "ERC721Bid#_placeBid: DURATION_MUST_BE_GTE_MIN_BID_DURATION"
         );
 
         require(
             _duration <= MAX_BID_DURATION,
-            "The bid can not last longer than 6 months"
+            "ERC721Bid#_placeBid: DURATION_MUST_BE_LTE_MAX_BID_DURATION"
         );
 
         ERC721Interface token = ERC721Interface(_tokenAddress);
         address tokenOwner = token.ownerOf(_tokenId);
         require(
             tokenOwner != address(0) && tokenOwner != sender,
-            "The token should have an owner different from the sender"
+            "ERC721Bid#_placeBid: ALREADY_OWNED_TOKEN"
         );
 
-        uint256 expiresAt = block.timestamp.add(_duration);
+        uint256 expiresAt = block.timestamp + _duration;
 
         bytes32 bidId = keccak256(
             abi.encodePacked(
@@ -222,7 +236,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction
             // solium-disable-next-line operator-whitespace
             bid.id == bidId &&
             bid.expiresAt >= block.timestamp,
-            "Invalid bid"
+            "ERC721Bid#onERC721Received: INVALID_BID"
         );
 
         address bidder = bid.bidder;
@@ -245,21 +259,54 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction
         // Transfer token to bidder
         ERC721Interface(msg.sender).transferFrom(address(this), bidder, _tokenId);
 
-        uint256 saleShareAmount = 0;
-        if (ownerCutPerMillion > 0) {
-            // Calculate sale share
-            saleShareAmount = price.mul(ownerCutPerMillion).div(ONE_MILLION);
-            // Transfer share amount to the bid conctract Owner
-            require(
-                manaToken.transferFrom(bidder, owner(), saleShareAmount),
-                "Transfering the cut to the bid contract owner failed"
+        uint256 feesCollectorShareAmount;
+        uint256 royaltiesShareAmount;
+        address royaltiesReceiver;
+
+        // Royalties share
+        if (royaltiesCutPerMillion > 0) {
+            royaltiesShareAmount = (price * royaltiesCutPerMillion) / ONE_MILLION;
+
+            (bool success, bytes memory res) = address(royaltiesManager).staticcall(
+                abi.encodeWithSelector(
+                    royaltiesManager.getRoyaltiesReceiver.selector,
+                    msg.sender,
+                    _tokenId
+                )
             );
+
+            if (success) {
+                (royaltiesReceiver) = abi.decode(res, (address));
+                if (royaltiesReceiver != address(0)) {
+                require(
+                    manaToken.transferFrom(bidder, royaltiesReceiver, royaltiesShareAmount),
+                    "ERC721Bid#onERC721Received: TRANSFER_FEES_TO_ROYALTIES_RECEIVER_FAILED"
+                );
+                }
+            }
+        }
+
+        // Fees collector share
+        {
+            feesCollectorShareAmount = (price * feesCollectorCutPerMillion) / ONE_MILLION;
+            uint256 totalFeeCollectorShareAmount = feesCollectorShareAmount;
+
+            if (royaltiesShareAmount > 0 && royaltiesReceiver == address(0)) {
+                totalFeeCollectorShareAmount += royaltiesShareAmount;
+            }
+
+            if (totalFeeCollectorShareAmount > 0) {
+                require(
+                    manaToken.transferFrom(bidder, feesCollector, totalFeeCollectorShareAmount),
+                    "ERC721Bid#onERC721Received: TRANSFER_FEES_TO_FEES_COLLECTOR_FAILED"
+                );
+            }
         }
 
         // Transfer MANA from bidder to seller
         require(
-            manaToken.transferFrom(bidder, _from, price.sub(saleShareAmount)),
-            "Transfering MANA to owner failed"
+            manaToken.transferFrom(bidder, _from, price - royaltiesShareAmount - feesCollectorShareAmount),
+            "ERC721Bid#onERC721Received:: TRANSFER_AMOUNT_TO_TOKEN_OWNER_FAILED"
         );
 
         emit BidAccepted(
@@ -269,7 +316,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction
             bidder,
             _from,
             price,
-            saleShareAmount
+            royaltiesShareAmount + feesCollectorShareAmount
         );
 
         return ERC721_Received;
@@ -286,8 +333,10 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction
     {
         uint256 loopLength = _tokenAddresses.length;
 
-        require(loopLength == _tokenIds.length, "Parameter arrays should have the same length");
-        require(loopLength == _bidders.length, "Parameter arrays should have the same length");
+        require(
+            loopLength == _tokenIds.length && loopLength == _bidders.length ,
+            "ERC721Bid#removeExpiredBids: LENGHT_MISMATCH"
+        );
 
         for (uint256 i = 0; i < loopLength; i++) {
             _removeExpiredBid(_tokenAddresses[i], _tokenIds[i], _bidders[i]);
@@ -309,7 +358,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction
             _bidder
         );
 
-        require(expiresAt < block.timestamp, "The bid to remove should be expired");
+        require(expiresAt < block.timestamp, "ERC721Bid#_removeExpiredBid: BID_NOT_EXPIRED");
 
         _cancelBid(
             bidIndex,
@@ -365,7 +414,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction
         delete bidIdByTokenAndBidder[_tokenAddress][_tokenId][_bidder];
 
         // Check if the bid is at the end of the mapping
-        uint256 lastBidIndex = bidCounterByToken[_tokenAddress][_tokenId].sub(1);
+        uint256 lastBidIndex = bidCounterByToken[_tokenAddress][_tokenId] - 1;
         if (lastBidIndex != _bidIndex) {
             // Move last bid to the removed place
             Bid storage lastBid = bidsByToken[_tokenAddress][_tokenId][lastBidIndex];
@@ -437,7 +486,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction
         bidIndex = bidIndexByBidId[bidId];
         (bidId, bidder, price, expiresAt) = getBidByToken(_tokenAddress, _tokenId, bidIndex);
         if (_bidder != bidder) {
-            revert("Bidder has not an active bid for this token");
+            revert("ERC721Bid#getBidByBidder: BIDDER_HAS_NOT_ACTIVE_BIDS_FOR_TOKEN");
         }
     }
 
@@ -479,20 +528,63 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction
         view
         returns (Bid memory)
     {
-        require(_index < bidCounterByToken[_tokenAddress][_tokenId], "Invalid index");
+        require(_index < bidCounterByToken[_tokenAddress][_tokenId], "ERC721Bid#_getBid: INVALID_INDEX");
         return bidsByToken[_tokenAddress][_tokenId][_index];
     }
 
     /**
-    * @dev Sets the share cut for the owner of the contract that's
-    * charged to the seller on a successful sale
-    * @param _ownerCutPerMillion - Share amount, from 0 to 999,999
+    * @dev Sets the share cut for the fees collector of the contract that's
+    *  charged to the seller on a successful sale
+    * @param _feesCollectorCutPerMillion - fees for the collector
     */
-    function setOwnerCutPerMillion(uint256 _ownerCutPerMillion) public onlyOwner {
-        require(_ownerCutPerMillion < ONE_MILLION, "The owner cut should be between 0 and 999,999");
+    function setFeesCollectorCutPerMillion(uint256 _feesCollectorCutPerMillion) public onlyOwner {
+        feesCollectorCutPerMillion = _feesCollectorCutPerMillion;
 
-        ownerCutPerMillion = _ownerCutPerMillion;
-        emit ChangedOwnerCutPerMillion(ownerCutPerMillion);
+        require(
+            feesCollectorCutPerMillion + royaltiesCutPerMillion < 1000000,
+            "ERC721Bid#setFeesCollectorCutPerMillion: TOTAL_FEES_MUST_BE_BETWEEN_0_AND_999999"
+        );
+
+        emit ChangedFeesCollectorCutPerMillion(feesCollectorCutPerMillion);
+    }
+
+    /**
+    * @dev Sets the share cut for the royalties that's
+    *  charged to the seller on a successful sale
+    * @param _royaltiesCutPerMillion - fees for royalties
+    */
+    function setRoyaltiesCutPerMillion(uint256 _royaltiesCutPerMillion) public onlyOwner {
+        royaltiesCutPerMillion = _royaltiesCutPerMillion;
+
+        require(
+            feesCollectorCutPerMillion + royaltiesCutPerMillion < 1000000,
+            "ERC721Bid#setRoyaltiesCutPerMillion: TOTAL_FEES_MUST_BE_BETWEEN_0_AND_999999"
+        );
+
+        emit ChangedRoyaltiesCutPerMillion(royaltiesCutPerMillion);
+    }
+
+    /**
+    * @notice Set the fees collector
+    * @param _newFeesCollector - fees collector
+    */
+    function setFeesCollector(address _newFeesCollector) onlyOwner public {
+        require(_newFeesCollector != address(0), "ERC721Bid#setFeesCollector: INVALID_FEES_COLLECTOR");
+
+        emit FeesCollectorSet(feesCollector, _newFeesCollector);
+        feesCollector = _newFeesCollector;
+    }
+
+    /**
+    * @notice Set the royalties manager
+    * @param _newRoyaltiesManager - royalties manager
+    */
+    function setRoyaltiesManager(IRoyaltiesManager _newRoyaltiesManager) onlyOwner public {
+        require(address(_newRoyaltiesManager).isContract(), "ERC721Bid#setRoyaltiesManager: INVALID_ROYALTIES_MANAGER");
+
+
+        emit RoyaltiesManagerSet(royaltiesManager, _newRoyaltiesManager);
+        royaltiesManager = _newRoyaltiesManager;
     }
 
      /**
@@ -508,7 +600,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction
     * @return bytes32
     */
     function _bytesToBytes32(bytes memory _data) internal pure returns (bytes32) {
-        require(_data.length == 32, "The data should be 32 bytes length");
+        require(_data.length == 32, "ERC721Bid#_bytesToBytes32: DATA_LENGHT_SHOULD_BE_32");
 
         bytes32 bidId;
         // solium-disable-next-line security/no-inline-assembly
@@ -523,12 +615,12 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction
     * @param _tokenAddress - address of the token
     */
     function _requireERC721(address _tokenAddress) internal view {
-        require(_tokenAddress.isContract(), "Token should be a contract");
+        require(_tokenAddress.isContract(), "ERC721Bid#_requireERC721: ADDRESS_NOT_A_CONTRACT");
 
         ERC721Interface token = ERC721Interface(_tokenAddress);
         require(
             token.supportsInterface(ERC721_Interface),
-            "Token has an invalid ERC721 implementation"
+            "ERC721Bid#_requireERC721: INVALID_CONTRACT_IMPLEMENTATION"
         );
     }
 
@@ -551,7 +643,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction
         if (composableToken.supportsInterface(ERC721Composable_ValidateFingerprint)) {
             require(
                 composableToken.verifyFingerprint(_tokenId, _fingerprint),
-                "Token fingerprint is not valid"
+                "ERC721Bid#_requireComposableERC721: INVALID_FINGERPRINT"
             );
         }
     }
@@ -565,11 +657,11 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction
     function _requireBidderBalance(address _bidder, uint256 _amount) internal view {
         require(
             manaToken.balanceOf(_bidder) >= _amount,
-            "Insufficient funds"
+            "ERC721Bid#_requireBidderBalance: INSUFFICIENT_FUNDS"
         );
         require(
             manaToken.allowance(_bidder, address(this)) >= _amount,
-            "The contract is not authorized to use MANA on bidder behalf"
+            "ERC721Bid#_requireBidderBalance: CONTRACT_NOT_AUTHORIZED"
         );
     }
 }

@@ -7,6 +7,8 @@ import '@nomiclabs/hardhat-ethers'
 import '@nomiclabs/hardhat-etherscan'
 import 'decentraland-contract-plugins/dist/src/mana/tasks/load-mana'
 import '@nomiclabs/hardhat-web3'
+import 'solidity-coverage'
+
 
 import { getDeployParams } from './scripts/utils'
 
@@ -15,7 +17,7 @@ module.exports = {
   solidity: {
     compilers: [
       {
-        version: '0.7.6',
+        version: '0.8.0',
         settings: {
           optimizer: {
             enabled: true,
@@ -27,13 +29,16 @@ module.exports = {
   },
   networks: {
     hardhat: {
-      blockGasLimit: 10000000,
-      gas: 10000000,
+      initialBaseFeePerGas: 0,
+      gas: 12000000,
+      blockGasLimit: 0x1fffffffffffff,
+      allowUnlimitedContractSize: true,
     },
     local: {
       url: 'http://127.0.0.1:8545',
-      blockGasLimit: 10000000,
-      gas: 10000000,
+      gas: 12000000,
+      blockGasLimit: 0x1fffffffffffff,
+      allowUnlimitedContractSize: true,
       network_id: '*', // eslint-disable-line camelcase
     },
     deploy: getDeployParams(),
@@ -44,5 +49,8 @@ module.exports = {
     currency: 'USD',
     gasPrice: 21,
     showTimeSpent: true,
+  },
+  etherscan: {
+    apiKey: process.env.ETHERSCAN_API_KEY
   },
 }

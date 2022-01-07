@@ -67,7 +67,7 @@ contract ERC721BidStorage {
     public
     bidIdByTokenAndBidder;
 
-    uint256 public ownerCutPerMillion;
+    uint256 public feesCollectorCutPerMillion;
 
     // EVENTS
     event BidCreated(
@@ -96,7 +96,7 @@ contract ERC721BidStorage {
       address indexed _bidder
     );
 
-    event ChangedOwnerCutPerMillion(uint256 _ownerCutPerMillion);
+    event ChangedFeesCollectorCutPerMillion(uint256 _feesCollectorCutPerMillion);
 }
 
 contract Bid is Ownable {
@@ -297,9 +297,9 @@ contract Bid is Ownable {
     /**
     * @dev Sets the share cut for the owner of the contract that's
     * charged to the seller on a successful sale
-    * @param _ownerCutPerMillion - Share amount, from 0 to 999,999
+    * @param _feesCollectorCutPerMillion - Share amount, from 0 to 999,999
     */
-    function setOwnerCutPerMillion(uint256 _ownerCutPerMillion) external onlyOwner;
+    function setFeesCollectorCutPerMillion(uint256 _feesCollectorCutPerMillion) external onlyOwner;
 
     /**
     * @dev Convert bytes to bytes32

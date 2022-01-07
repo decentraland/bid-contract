@@ -1,359 +1,624 @@
+// Sources flattened with hardhat v2.4.3 https://hardhat.org
 
-// File: openzeppelin-solidity/contracts/ownership/Ownable.sol
+// File @openzeppelin/contracts/utils/Address.sol@v4.3.3
 
-pragma solidity ^0.4.24;
+// SPDX-License-Identifier: MIT
 
-/**
- * @title Ownable
- * @dev The Ownable contract has an owner address, and provides basic authorization control
- * functions, this simplifies the implementation of "user permissions".
- */
-contract Ownable {
-  address private _owner;
-
-  event OwnershipTransferred(
-    address indexed previousOwner,
-    address indexed newOwner
-  );
-
-  /**
-   * @dev The Ownable constructor sets the original `owner` of the contract to the sender
-   * account.
-   */
-  constructor() internal {
-    _owner = msg.sender;
-    emit OwnershipTransferred(address(0), _owner);
-  }
-
-  /**
-   * @return the address of the owner.
-   */
-  function owner() public view returns(address) {
-    return _owner;
-  }
-
-  /**
-   * @dev Throws if called by any account other than the owner.
-   */
-  modifier onlyOwner() {
-    require(isOwner());
-    _;
-  }
-
-  /**
-   * @return true if `msg.sender` is the owner of the contract.
-   */
-  function isOwner() public view returns(bool) {
-    return msg.sender == _owner;
-  }
-
-  /**
-   * @dev Allows the current owner to relinquish control of the contract.
-   * @notice Renouncing to ownership will leave the contract without an owner.
-   * It will not be possible to call the functions with the `onlyOwner`
-   * modifier anymore.
-   */
-  function renounceOwnership() public onlyOwner {
-    emit OwnershipTransferred(_owner, address(0));
-    _owner = address(0);
-  }
-
-  /**
-   * @dev Allows the current owner to transfer control of the contract to a newOwner.
-   * @param newOwner The address to transfer ownership to.
-   */
-  function transferOwnership(address newOwner) public onlyOwner {
-    _transferOwnership(newOwner);
-  }
-
-  /**
-   * @dev Transfers control of the contract to a newOwner.
-   * @param newOwner The address to transfer ownership to.
-   */
-  function _transferOwnership(address newOwner) internal {
-    require(newOwner != address(0));
-    emit OwnershipTransferred(_owner, newOwner);
-    _owner = newOwner;
-  }
-}
-
-// File: openzeppelin-solidity/contracts/access/Roles.sol
-
-pragma solidity ^0.4.24;
+pragma solidity ^0.8.0;
 
 /**
- * @title Roles
- * @dev Library for managing addresses assigned to a Role.
- */
-library Roles {
-  struct Role {
-    mapping (address => bool) bearer;
-  }
-
-  /**
-   * @dev give an account access to this role
-   */
-  function add(Role storage role, address account) internal {
-    require(account != address(0));
-    require(!has(role, account));
-
-    role.bearer[account] = true;
-  }
-
-  /**
-   * @dev remove an account's access to this role
-   */
-  function remove(Role storage role, address account) internal {
-    require(account != address(0));
-    require(has(role, account));
-
-    role.bearer[account] = false;
-  }
-
-  /**
-   * @dev check if an account has this role
-   * @return bool
-   */
-  function has(Role storage role, address account)
-    internal
-    view
-    returns (bool)
-  {
-    require(account != address(0));
-    return role.bearer[account];
-  }
-}
-
-// File: openzeppelin-solidity/contracts/access/roles/PauserRole.sol
-
-pragma solidity ^0.4.24;
-
-
-contract PauserRole {
-  using Roles for Roles.Role;
-
-  event PauserAdded(address indexed account);
-  event PauserRemoved(address indexed account);
-
-  Roles.Role private pausers;
-
-  constructor() internal {
-    _addPauser(msg.sender);
-  }
-
-  modifier onlyPauser() {
-    require(isPauser(msg.sender));
-    _;
-  }
-
-  function isPauser(address account) public view returns (bool) {
-    return pausers.has(account);
-  }
-
-  function addPauser(address account) public onlyPauser {
-    _addPauser(account);
-  }
-
-  function renouncePauser() public {
-    _removePauser(msg.sender);
-  }
-
-  function _addPauser(address account) internal {
-    pausers.add(account);
-    emit PauserAdded(account);
-  }
-
-  function _removePauser(address account) internal {
-    pausers.remove(account);
-    emit PauserRemoved(account);
-  }
-}
-
-// File: openzeppelin-solidity/contracts/lifecycle/Pausable.sol
-
-pragma solidity ^0.4.24;
-
-
-/**
- * @title Pausable
- * @dev Base contract which allows children to implement an emergency stop mechanism.
- */
-contract Pausable is PauserRole {
-  event Paused(address account);
-  event Unpaused(address account);
-
-  bool private _paused;
-
-  constructor() internal {
-    _paused = false;
-  }
-
-  /**
-   * @return true if the contract is paused, false otherwise.
-   */
-  function paused() public view returns(bool) {
-    return _paused;
-  }
-
-  /**
-   * @dev Modifier to make a function callable only when the contract is not paused.
-   */
-  modifier whenNotPaused() {
-    require(!_paused);
-    _;
-  }
-
-  /**
-   * @dev Modifier to make a function callable only when the contract is paused.
-   */
-  modifier whenPaused() {
-    require(_paused);
-    _;
-  }
-
-  /**
-   * @dev called by the owner to pause, triggers stopped state
-   */
-  function pause() public onlyPauser whenNotPaused {
-    _paused = true;
-    emit Paused(msg.sender);
-  }
-
-  /**
-   * @dev called by the owner to unpause, returns to normal state
-   */
-  function unpause() public onlyPauser whenPaused {
-    _paused = false;
-    emit Unpaused(msg.sender);
-  }
-}
-
-// File: openzeppelin-solidity/contracts/math/SafeMath.sol
-
-pragma solidity ^0.4.24;
-
-/**
- * @title SafeMath
- * @dev Math operations with safety checks that revert on error
- */
-library SafeMath {
-
-  /**
-  * @dev Multiplies two numbers, reverts on overflow.
-  */
-  function mul(uint256 a, uint256 b) internal pure returns (uint256) {
-    // Gas optimization: this is cheaper than requiring 'a' not being zero, but the
-    // benefit is lost if 'b' is also tested.
-    // See: https://github.com/OpenZeppelin/openzeppelin-solidity/pull/522
-    if (a == 0) {
-      return 0;
-    }
-
-    uint256 c = a * b;
-    require(c / a == b);
-
-    return c;
-  }
-
-  /**
-  * @dev Integer division of two numbers truncating the quotient, reverts on division by zero.
-  */
-  function div(uint256 a, uint256 b) internal pure returns (uint256) {
-    require(b > 0); // Solidity only automatically asserts when dividing by 0
-    uint256 c = a / b;
-    // assert(a == b * c + a % b); // There is no case in which this doesn't hold
-
-    return c;
-  }
-
-  /**
-  * @dev Subtracts two numbers, reverts on overflow (i.e. if subtrahend is greater than minuend).
-  */
-  function sub(uint256 a, uint256 b) internal pure returns (uint256) {
-    require(b <= a);
-    uint256 c = a - b;
-
-    return c;
-  }
-
-  /**
-  * @dev Adds two numbers, reverts on overflow.
-  */
-  function add(uint256 a, uint256 b) internal pure returns (uint256) {
-    uint256 c = a + b;
-    require(c >= a);
-
-    return c;
-  }
-
-  /**
-  * @dev Divides two numbers and returns the remainder (unsigned integer modulo),
-  * reverts when dividing by zero.
-  */
-  function mod(uint256 a, uint256 b) internal pure returns (uint256) {
-    require(b != 0);
-    return a % b;
-  }
-}
-
-// File: openzeppelin-solidity/contracts/utils/Address.sol
-
-pragma solidity ^0.4.24;
-
-/**
- * Utility library of inline functions on addresses
+ * @dev Collection of functions related to the address type
  */
 library Address {
+    /**
+     * @dev Returns true if `account` is a contract.
+     *
+     * [IMPORTANT]
+     * ====
+     * It is unsafe to assume that an address for which this function returns
+     * false is an externally-owned account (EOA) and not a contract.
+     *
+     * Among others, `isContract` will return false for the following
+     * types of addresses:
+     *
+     *  - an externally-owned account
+     *  - a contract in construction
+     *  - an address where a contract will be created
+     *  - an address where a contract lived, but was destroyed
+     * ====
+     */
+    function isContract(address account) internal view returns (bool) {
+        // This method relies on extcodesize, which returns 0 for contracts in
+        // construction, since the code is only stored at the end of the
+        // constructor execution.
 
-  /**
-   * Returns whether the target address is a contract
-   * @dev This function will return false if invoked during the constructor of a contract,
-   * as the code is not actually created until after the constructor finishes.
-   * @param account address of the account to check
-   * @return whether the target address is a contract
-   */
-  function isContract(address account) internal view returns (bool) {
-    uint256 size;
-    // XXX Currently there is no better way to check if there is a contract in an address
-    // than to check the size of the code at that address.
-    // See https://ethereum.stackexchange.com/a/14016/36603
-    // for more details about how this works.
-    // TODO Check this again before the Serenity release, because all addresses will be
-    // contracts then.
-    // solium-disable-next-line security/no-inline-assembly
-    assembly { size := extcodesize(account) }
-    return size > 0;
-  }
+        uint256 size;
+        assembly {
+            size := extcodesize(account)
+        }
+        return size > 0;
+    }
 
+    /**
+     * @dev Replacement for Solidity's `transfer`: sends `amount` wei to
+     * `recipient`, forwarding all available gas and reverting on errors.
+     *
+     * https://eips.ethereum.org/EIPS/eip-1884[EIP1884] increases the gas cost
+     * of certain opcodes, possibly making contracts go over the 2300 gas limit
+     * imposed by `transfer`, making them unable to receive funds via
+     * `transfer`. {sendValue} removes this limitation.
+     *
+     * https://diligence.consensys.net/posts/2019/09/stop-using-soliditys-transfer-now/[Learn more].
+     *
+     * IMPORTANT: because control is transferred to `recipient`, care must be
+     * taken to not create reentrancy vulnerabilities. Consider using
+     * {ReentrancyGuard} or the
+     * https://solidity.readthedocs.io/en/v0.5.11/security-considerations.html#use-the-checks-effects-interactions-pattern[checks-effects-interactions pattern].
+     */
+    function sendValue(address payable recipient, uint256 amount) internal {
+        require(address(this).balance >= amount, "Address: insufficient balance");
+
+        (bool success, ) = recipient.call{value: amount}("");
+        require(success, "Address: unable to send value, recipient may have reverted");
+    }
+
+    /**
+     * @dev Performs a Solidity function call using a low level `call`. A
+     * plain `call` is an unsafe replacement for a function call: use this
+     * function instead.
+     *
+     * If `target` reverts with a revert reason, it is bubbled up by this
+     * function (like regular Solidity function calls).
+     *
+     * Returns the raw returned data. To convert to the expected return value,
+     * use https://solidity.readthedocs.io/en/latest/units-and-global-variables.html?highlight=abi.decode#abi-encoding-and-decoding-functions[`abi.decode`].
+     *
+     * Requirements:
+     *
+     * - `target` must be a contract.
+     * - calling `target` with `data` must not revert.
+     *
+     * _Available since v3.1._
+     */
+    function functionCall(address target, bytes memory data) internal returns (bytes memory) {
+        return functionCall(target, data, "Address: low-level call failed");
+    }
+
+    /**
+     * @dev Same as {xref-Address-functionCall-address-bytes-}[`functionCall`], but with
+     * `errorMessage` as a fallback revert reason when `target` reverts.
+     *
+     * _Available since v3.1._
+     */
+    function functionCall(
+        address target,
+        bytes memory data,
+        string memory errorMessage
+    ) internal returns (bytes memory) {
+        return functionCallWithValue(target, data, 0, errorMessage);
+    }
+
+    /**
+     * @dev Same as {xref-Address-functionCall-address-bytes-}[`functionCall`],
+     * but also transferring `value` wei to `target`.
+     *
+     * Requirements:
+     *
+     * - the calling contract must have an ETH balance of at least `value`.
+     * - the called Solidity function must be `payable`.
+     *
+     * _Available since v3.1._
+     */
+    function functionCallWithValue(
+        address target,
+        bytes memory data,
+        uint256 value
+    ) internal returns (bytes memory) {
+        return functionCallWithValue(target, data, value, "Address: low-level call with value failed");
+    }
+
+    /**
+     * @dev Same as {xref-Address-functionCallWithValue-address-bytes-uint256-}[`functionCallWithValue`], but
+     * with `errorMessage` as a fallback revert reason when `target` reverts.
+     *
+     * _Available since v3.1._
+     */
+    function functionCallWithValue(
+        address target,
+        bytes memory data,
+        uint256 value,
+        string memory errorMessage
+    ) internal returns (bytes memory) {
+        require(address(this).balance >= value, "Address: insufficient balance for call");
+        require(isContract(target), "Address: call to non-contract");
+
+        (bool success, bytes memory returndata) = target.call{value: value}(data);
+        return verifyCallResult(success, returndata, errorMessage);
+    }
+
+    /**
+     * @dev Same as {xref-Address-functionCall-address-bytes-}[`functionCall`],
+     * but performing a static call.
+     *
+     * _Available since v3.3._
+     */
+    function functionStaticCall(address target, bytes memory data) internal view returns (bytes memory) {
+        return functionStaticCall(target, data, "Address: low-level static call failed");
+    }
+
+    /**
+     * @dev Same as {xref-Address-functionCall-address-bytes-string-}[`functionCall`],
+     * but performing a static call.
+     *
+     * _Available since v3.3._
+     */
+    function functionStaticCall(
+        address target,
+        bytes memory data,
+        string memory errorMessage
+    ) internal view returns (bytes memory) {
+        require(isContract(target), "Address: static call to non-contract");
+
+        (bool success, bytes memory returndata) = target.staticcall(data);
+        return verifyCallResult(success, returndata, errorMessage);
+    }
+
+    /**
+     * @dev Same as {xref-Address-functionCall-address-bytes-}[`functionCall`],
+     * but performing a delegate call.
+     *
+     * _Available since v3.4._
+     */
+    function functionDelegateCall(address target, bytes memory data) internal returns (bytes memory) {
+        return functionDelegateCall(target, data, "Address: low-level delegate call failed");
+    }
+
+    /**
+     * @dev Same as {xref-Address-functionCall-address-bytes-string-}[`functionCall`],
+     * but performing a delegate call.
+     *
+     * _Available since v3.4._
+     */
+    function functionDelegateCall(
+        address target,
+        bytes memory data,
+        string memory errorMessage
+    ) internal returns (bytes memory) {
+        require(isContract(target), "Address: delegate call to non-contract");
+
+        (bool success, bytes memory returndata) = target.delegatecall(data);
+        return verifyCallResult(success, returndata, errorMessage);
+    }
+
+    /**
+     * @dev Tool to verifies that a low level call was successful, and revert if it wasn't, either by bubbling the
+     * revert reason using the provided one.
+     *
+     * _Available since v4.3._
+     */
+    function verifyCallResult(
+        bool success,
+        bytes memory returndata,
+        string memory errorMessage
+    ) internal pure returns (bytes memory) {
+        if (success) {
+            return returndata;
+        } else {
+            // Look for revert reason and bubble it up if present
+            if (returndata.length > 0) {
+                // The easiest way to bubble the revert reason is using memory via assembly
+
+                assembly {
+                    let returndata_size := mload(returndata)
+                    revert(add(32, returndata), returndata_size)
+                }
+            } else {
+                revert(errorMessage);
+            }
+        }
+    }
 }
 
-// File: contracts/bid/ERC721BidStorage.sol
 
-pragma solidity ^0.4.24;
+// File contracts/commons/ContextMixin.sol
+
+// SPDX-License-Identifier: MIT
+
+pragma solidity ^0.8.0;
+
+
+contract ContextMixin {
+    function _msgSender()
+        internal
+        view
+        returns (address sender)
+    {
+        if (msg.sender == address(this)) {
+            bytes memory array = msg.data;
+            uint256 index = msg.data.length;
+            assembly {
+                // Load the 32 bytes word from memory with the address on the lower 20 bytes, and mask those.
+                sender := and(
+                    mload(add(array, index)),
+                    0xffffffffffffffffffffffffffffffffffffffff
+                )
+            }
+        } else {
+            sender = msg.sender;
+        }
+        return sender;
+    }
+}
+
+
+// File contracts/commons/Ownable.sol
+
+// SPDX-License-Identifier: MIT
+
+pragma solidity >=0.6.0;
+
+/**
+ * @dev Contract module which provides a basic access control mechanism, where
+ * there is an account (an owner) that can be granted exclusive access to
+ * specific functions.
+ *
+ * By default, the owner account will be the one that deploys the contract. This
+ * can later be changed with {transferOwnership}.
+ *
+ * This module is used through inheritance. It will make available the modifier
+ * `onlyOwner`, which can be applied to your functions to restrict their use to
+ * the owner.
+ */
+abstract contract Ownable is ContextMixin {
+    address private _owner;
+
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+
+    /**
+     * @dev Initializes the contract setting the deployer as the initial owner.
+     */
+    constructor () {
+        address msgSender = _msgSender();
+        _owner = msgSender;
+        emit OwnershipTransferred(address(0), msgSender);
+    }
+
+    /**
+     * @dev Returns the address of the current owner.
+     */
+    function owner() public view virtual returns (address) {
+        return _owner;
+    }
+
+    /**
+     * @dev Throws if called by any account other than the owner.
+     */
+    modifier onlyOwner() {
+        require(owner() == _msgSender(), "Ownable: caller is not the owner");
+        _;
+    }
+
+    /**
+     * @dev Leaves the contract without owner. It will not be possible to call
+     * `onlyOwner` functions anymore. Can only be called by the current owner.
+     *
+     * NOTE: Renouncing ownership will leave the contract without an owner,
+     * thereby removing any functionality that is only available to the owner.
+     */
+    function renounceOwnership() public virtual onlyOwner {
+        emit OwnershipTransferred(_owner, address(0));
+        _owner = address(0);
+    }
+
+    /**
+     * @dev Transfers ownership of the contract to a new account (`newOwner`).
+     * Can only be called by the current owner.
+     */
+    function transferOwnership(address newOwner) public virtual onlyOwner {
+        require(newOwner != address(0), "Ownable: new owner is the zero address");
+        emit OwnershipTransferred(_owner, newOwner);
+        _owner = newOwner;
+    }
+}
+
+
+// File contracts/commons/Pausable.sol
+
+// SPDX-License-Identifier: MIT
+
+pragma solidity >=0.6.0;
+
+/**
+ * @dev Contract module which allows children to implement an emergency stop
+ * mechanism that can be triggered by an authorized account.
+ *
+ * This module is used through inheritance. It will make available the
+ * modifiers `whenNotPaused` and `whenPaused`, which can be applied to
+ * the functions of your contract. Note that they will not be pausable by
+ * simply including this module, only once the modifiers are put in place.
+ */
+abstract contract Pausable is ContextMixin {
+    /**
+     * @dev Emitted when the pause is triggered by `account`.
+     */
+    event Paused(address account);
+
+    /**
+     * @dev Emitted when the pause is lifted by `account`.
+     */
+    event Unpaused(address account);
+
+    bool private _paused;
+
+    /**
+     * @dev Initializes the contract in unpaused state.
+     */
+    constructor () {
+        _paused = false;
+    }
+
+    /**
+     * @dev Returns true if the contract is paused, and false otherwise.
+     */
+    function paused() public view virtual returns (bool) {
+        return _paused;
+    }
+
+    /**
+     * @dev Modifier to make a function callable only when the contract is not paused.
+     *
+     * Requirements:
+     *
+     * - The contract must not be paused.
+     */
+    modifier whenNotPaused() {
+        require(!paused(), "Pausable: paused");
+        _;
+    }
+
+    /**
+     * @dev Modifier to make a function callable only when the contract is paused.
+     *
+     * Requirements:
+     *
+     * - The contract must be paused.
+     */
+    modifier whenPaused() {
+        require(paused(), "Pausable: not paused");
+        _;
+    }
+
+    /**
+     * @dev Triggers stopped state.
+     *
+     * Requirements:
+     *
+     * - The contract must not be paused.
+     */
+    function _pause() internal virtual whenNotPaused {
+        _paused = true;
+        emit Paused(_msgSender());
+    }
+
+    /**
+     * @dev Returns to normal state.
+     *
+     * Requirements:
+     *
+     * - The contract must be paused.
+     */
+    function _unpause() internal virtual whenPaused {
+        _paused = false;
+        emit Unpaused(_msgSender());
+    }
+}
+
+
+// File contracts/commons/EIP712Base.sol
+
+// SPDX-License-Identifier: MIT
+
+pragma solidity ^0.8.0;
+
+
+contract EIP712Base {
+    struct EIP712Domain {
+        string name;
+        string version;
+        address verifyingContract;
+        bytes32 salt;
+    }
+
+    bytes32 internal constant EIP712_DOMAIN_TYPEHASH = keccak256(
+        bytes(
+            "EIP712Domain(string name,string version,address verifyingContract,bytes32 salt)"
+        )
+    );
+    bytes32 public domainSeparator;
+
+    // supposed to be called once while initializing.
+    // one of the contractsa that inherits this contract follows proxy pattern
+    // so it is not possible to do this in a constructor
+    function _initializeEIP712(
+        string memory name,
+        string memory version
+    )
+        internal
+    {
+        domainSeparator = keccak256(
+            abi.encode(
+                EIP712_DOMAIN_TYPEHASH,
+                keccak256(bytes(name)),
+                keccak256(bytes(version)),
+                address(this),
+                bytes32(getChainId())
+            )
+        );
+    }
+
+    function getChainId() public view returns (uint256) {
+        uint256 id;
+        assembly {
+            id := chainid()
+        }
+        return id;
+    }
+
+    /**
+     * Accept message hash and returns hash message in EIP712 compatible form
+     * So that it can be used to recover signer from signature signed using EIP712 formatted data
+     * https://eips.ethereum.org/EIPS/eip-712
+     * "\\x19" makes the encoding deterministic
+     * "\\x01" is the version byte to make it compatible to EIP-191
+     */
+    function toTypedMessageHash(bytes32 messageHash)
+        internal
+        view
+        returns (bytes32)
+    {
+        return
+            keccak256(
+                abi.encodePacked("\x19\x01", domainSeparator, messageHash)
+            );
+    }
+}
+
+
+// File contracts/commons/NativeMetaTransaction.sol
+
+// SPDX-License-Identifier: MIT
+
+pragma solidity ^0.8.0;
+
+contract NativeMetaTransaction is EIP712Base {
+    bytes32 private constant META_TRANSACTION_TYPEHASH = keccak256(
+        bytes(
+            "MetaTransaction(uint256 nonce,address from,bytes functionSignature)"
+        )
+    );
+    event MetaTransactionExecuted(
+        address userAddress,
+        address relayerAddress,
+        bytes functionSignature
+    );
+    mapping(address => uint256) nonces;
+
+    /*
+     * Meta transaction structure.
+     * No point of including value field here as if user is doing value transfer then he has the funds to pay for gas
+     * He should call the desired function directly in that case.
+     */
+    struct MetaTransaction {
+        uint256 nonce;
+        address from;
+        bytes functionSignature;
+    }
+
+    function executeMetaTransaction(
+        address userAddress,
+        bytes memory functionSignature,
+        bytes32 sigR,
+        bytes32 sigS,
+        uint8 sigV
+    ) public payable returns (bytes memory) {
+        MetaTransaction memory metaTx = MetaTransaction({
+            nonce: nonces[userAddress],
+            from: userAddress,
+            functionSignature: functionSignature
+        });
+
+        require(
+            verify(userAddress, metaTx, sigR, sigS, sigV),
+            "NMT#executeMetaTransaction: SIGNER_AND_SIGNATURE_DO_NOT_MATCH"
+        );
+
+        // increase nonce for user (to avoid re-use)
+        nonces[userAddress] = nonces[userAddress] + 1;
+
+        emit MetaTransactionExecuted(
+            userAddress,
+            msg.sender,
+            functionSignature
+        );
+
+        // Append userAddress and relayer address at the end to extract it from calling context
+        (bool success, bytes memory returnData) = address(this).call(
+            abi.encodePacked(functionSignature, userAddress)
+        );
+        require(success, "NMT#executeMetaTransaction: CALL_FAILED");
+
+        return returnData;
+    }
+
+    function hashMetaTransaction(MetaTransaction memory metaTx)
+        internal
+        pure
+        returns (bytes32)
+    {
+        return
+            keccak256(
+                abi.encode(
+                    META_TRANSACTION_TYPEHASH,
+                    metaTx.nonce,
+                    metaTx.from,
+                    keccak256(metaTx.functionSignature)
+                )
+            );
+    }
+
+    function getNonce(address user) public view returns (uint256 nonce) {
+        nonce = nonces[user];
+    }
+
+    function verify(
+        address signer,
+        MetaTransaction memory metaTx,
+        bytes32 sigR,
+        bytes32 sigS,
+        uint8 sigV
+    ) internal view returns (bool) {
+        require(signer != address(0), "NMT#verify: INVALID_SIGNER");
+        return
+            signer ==
+            ecrecover(
+                toTypedMessageHash(hashMetaTransaction(metaTx)),
+                sigV,
+                sigR,
+                sigS
+            );
+    }
+}
+
+
+// File contracts/bid/ERC721BidStorage.sol
+
+// SPDX-License-Identifier: MIT
+
+pragma solidity ^0.8.0;
 
 
 /**
  * @title Interface for contracts conforming to ERC-20
  */
-contract ERC20Interface {
-    function balanceOf(address from) public view returns (uint256);
-    function transferFrom(address from, address to, uint tokens) public returns (bool);
-    function allowance(address owner, address spender) public view returns (uint256);
+interface ERC20Interface {
+    function balanceOf(address from) external view returns (uint256);
+    function transferFrom(address from, address to, uint tokens) external returns (bool);
+    function allowance(address owner, address spender) external view returns (uint256);
 }
 
 
 /**
  * @title Interface for contracts conforming to ERC-721
  */
-contract ERC721Interface {
-    function ownerOf(uint256 _tokenId) public view returns (address _owner);
-    function transferFrom(address _from, address _to, uint256 _tokenId) public;
-    function supportsInterface(bytes4) public view returns (bool);
+interface ERC721Interface {
+    function ownerOf(uint256 _tokenId) external view returns (address _owner);
+    function transferFrom(address _from, address _to, uint256 _tokenId) external;
+    function supportsInterface(bytes4) external view returns (bool);
 }
 
 
-contract ERC721Verifiable is ERC721Interface {
-    function verifyFingerprint(uint256, bytes memory) public view returns (bool);
+interface ERC721Verifiable is ERC721Interface {
+    function verifyFingerprint(uint256, bytes memory) external view returns (bool);
 }
 
 
@@ -365,19 +630,19 @@ contract ERC721BidStorage {
     bytes4 public constant ERC721_Interface = 0x80ac58cd;
     bytes4 public constant ERC721_Received = 0x150b7a02;
     bytes4 public constant ERC721Composable_ValidateFingerprint = 0x8f9f4b63;
-    
+
     struct Bid {
         // Bid Id
         bytes32 id;
-        // Bidder address 
+        // Bidder address
         address bidder;
         // ERC721 address
         address tokenAddress;
         // ERC721 token id
         uint256 tokenId;
-        // Price for the bid in wei 
+        // Price for the bid in wei
         uint256 price;
-        // Time when this bid ends 
+        // Time when this bid ends
         uint256 expiresAt;
         // Fingerprint for composable
         bytes fingerprint;
@@ -393,12 +658,12 @@ contract ERC721BidStorage {
     // Index of the bid at bidsByToken mapping by bid id => bid index
     mapping(bytes32 => uint256) public bidIndexByBidId;
     // Bid id by token address => token id => bidder address => bidId
-    mapping(address => mapping(uint256 => mapping(address => bytes32))) 
-    public 
+    mapping(address => mapping(uint256 => mapping(address => bytes32)))
+    public
     bidIdByTokenAndBidder;
 
 
-    uint256 public ownerCutPerMillion;
+    uint256 public feesCollectorCutPerMillion;
 
     // EVENTS
     event BidCreated(
@@ -410,7 +675,7 @@ contract ERC721BidStorage {
       uint256 _expiresAt,
       bytes _fingerprint
     );
-    
+
     event BidAccepted(
       bytes32 _id,
       address indexed _tokenAddress,
@@ -428,21 +693,21 @@ contract ERC721BidStorage {
       address indexed _bidder
     );
 
-    event ChangedOwnerCutPerMillion(uint256 _ownerCutPerMillion);
+    event ChangedFeesCollectorCutPerMillion(uint256 _feesCollectorCutPerMillion);
 }
 
-// File: contracts/bid/ERC721Bid.sol
 
-pragma solidity ^0.4.24;
+// File contracts/bid/ERC721Bid.sol
 
+// SPDX-License-Identifier: MIT
 
-
-
-
+pragma solidity ^0.8.0;
 
 
-contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
-    using SafeMath for uint256;
+
+
+
+contract ERC721Bid is Ownable, Pausable, ERC721BidStorage, NativeMetaTransaction {
     using Address for address;
 
     /**
@@ -450,7 +715,13 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     * @param _manaToken - address of the mana token
     * @param _owner - address of the owner for the contract
     */
-    constructor(address _manaToken, address _owner) Ownable() Pausable() public {
+    constructor(address _manaToken, address _owner, uint256 _feesCollectorCutPerMillion) Ownable() Pausable() {
+         // EIP712 init
+        _initializeEIP712('Decentraland Bid', '1');
+
+         // Fee init
+        setFeesCollectorCutPerMillion(_feesCollectorCutPerMillion);
+
         manaToken = ERC20Interface(_manaToken);
         // Set owner
         transferOwnership(_owner);
@@ -464,7 +735,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     * @param _duration - uint256 of the duration in seconds for the bid
     */
     function placeBid(
-        address _tokenAddress, 
+        address _tokenAddress,
         uint256 _tokenId,
         uint256 _price,
         uint256 _duration
@@ -472,7 +743,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
         public
     {
         _placeBid(
-            _tokenAddress, 
+            _tokenAddress,
             _tokenId,
             _price,
             _duration,
@@ -486,23 +757,23 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     * @param _tokenId - uint256 of the token id
     * @param _price - uint256 of the price for the bid
     * @param _duration - uint256 of the duration in seconds for the bid
-    * @param _fingerprint - bytes of ERC721 token fingerprint 
+    * @param _fingerprint - bytes of ERC721 token fingerprint
     */
     function placeBid(
-        address _tokenAddress, 
+        address _tokenAddress,
         uint256 _tokenId,
         uint256 _price,
         uint256 _duration,
-        bytes _fingerprint
+        bytes memory _fingerprint
     )
         public
     {
         _placeBid(
-            _tokenAddress, 
+            _tokenAddress,
             _tokenId,
             _price,
             _duration,
-            _fingerprint 
+            _fingerprint
         );
     }
 
@@ -516,10 +787,10 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     * @param _tokenId - uint256 of the token id
     * @param _price - uint256 of the price for the bid
     * @param _duration - uint256 of the duration in seconds for the bid
-    * @param _fingerprint - bytes of ERC721 token fingerprint 
+    * @param _fingerprint - bytes of ERC721 token fingerprint
     */
     function _placeBid(
-        address _tokenAddress, 
+        address _tokenAddress,
         uint256 _tokenId,
         uint256 _price,
         uint256 _duration,
@@ -530,34 +801,35 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     {
         _requireERC721(_tokenAddress);
         _requireComposableERC721(_tokenAddress, _tokenId, _fingerprint);
+        address sender = _msgSender();
 
         require(_price > 0, "Price should be bigger than 0");
 
-        _requireBidderBalance(msg.sender, _price);       
+        _requireBidderBalance(sender, _price);
 
         require(
-            _duration >= MIN_BID_DURATION, 
-            "The bid should be last longer than a minute"
+            _duration >= MIN_BID_DURATION,
+            "The bid should last at least one minute"
         );
 
         require(
-            _duration <= MAX_BID_DURATION, 
+            _duration <= MAX_BID_DURATION,
             "The bid can not last longer than 6 months"
         );
 
         ERC721Interface token = ERC721Interface(_tokenAddress);
         address tokenOwner = token.ownerOf(_tokenId);
         require(
-            tokenOwner != address(0) && tokenOwner != msg.sender,
+            tokenOwner != address(0) && tokenOwner != sender,
             "The token should have an owner different from the sender"
         );
 
-        uint256 expiresAt = block.timestamp.add(_duration);
+        uint256 expiresAt = block.timestamp + _duration;
 
         bytes32 bidId = keccak256(
             abi.encodePacked(
                 block.timestamp,
-                msg.sender,
+                sender,
                 _tokenAddress,
                 _tokenId,
                 _price,
@@ -568,27 +840,27 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
 
         uint256 bidIndex;
 
-        if (_bidderHasABid(_tokenAddress, _tokenId, msg.sender)) {
+        if (_bidderHasABid(_tokenAddress, _tokenId, sender)) {
             bytes32 oldBidId;
-            (bidIndex, oldBidId,,,) = getBidByBidder(_tokenAddress, _tokenId, msg.sender);
-            
+            (bidIndex, oldBidId,,,) = getBidByBidder(_tokenAddress, _tokenId, sender);
+
             // Delete old bid reference
             delete bidIndexByBidId[oldBidId];
         } else {
-            // Use the bid counter to assign the index if there is not an active bid. 
-            bidIndex = bidCounterByToken[_tokenAddress][_tokenId];  
-            // Increase bid counter 
+            // Use the bid counter to assign the index if there is not an active bid.
+            bidIndex = bidCounterByToken[_tokenAddress][_tokenId];
+            // Increase bid counter
             bidCounterByToken[_tokenAddress][_tokenId]++;
         }
 
         // Set bid references
-        bidIdByTokenAndBidder[_tokenAddress][_tokenId][msg.sender] = bidId;
+        bidIdByTokenAndBidder[_tokenAddress][_tokenId][sender] = bidId;
         bidIndexByBidId[bidId] = bidIndex;
 
         // Save Bid
         bidsByToken[_tokenAddress][_tokenId][bidIndex] = Bid({
             id: bidId,
-            bidder: msg.sender,
+            bidder: sender,
             tokenAddress: _tokenAddress,
             tokenId: _tokenId,
             price: _price,
@@ -600,22 +872,22 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
             bidId,
             _tokenAddress,
             _tokenId,
-            msg.sender,
+            sender,
             _price,
             expiresAt,
-            _fingerprint     
+            _fingerprint
         );
     }
 
     /**
-    * @dev Used as the only way to accept a bid. 
+    * @dev Used as the only way to accept a bid.
     * The token owner should send the token to this contract using safeTransferFrom.
     * The last parameter (bytes) should be the bid id.
     * @notice  The ERC721 smart contract calls this function on the recipient
     * after a `safetransfer`. This function MAY throw to revert and reject the
     * transfer. Return of other than the magic value MUST result in the
     * transaction being reverted.
-    * Note: 
+    * Note:
     * Contract address is always the message sender.
     * This method should be seen as 'acceptBid'.
     * It validates that the bid id matches an active bid for the bid token.
@@ -643,13 +915,13 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
         require(
             // solium-disable-next-line operator-whitespace
             bid.id == bidId &&
-            bid.expiresAt >= block.timestamp, 
+            bid.expiresAt >= block.timestamp,
             "Invalid bid"
         );
 
         address bidder = bid.bidder;
         uint256 price = bid.price;
-        
+
         // Check fingerprint if necessary
         _requireComposableERC721(msg.sender, _tokenId, bid.fingerprint);
 
@@ -663,14 +935,14 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
 
         // Reset bid counter to invalidate other bids placed for the token
         delete bidCounterByToken[msg.sender][_tokenId];
-        
+
         // Transfer token to bidder
         ERC721Interface(msg.sender).transferFrom(address(this), bidder, _tokenId);
 
         uint256 saleShareAmount = 0;
-        if (ownerCutPerMillion > 0) {
+        if (feesCollectorCutPerMillion > 0) {
             // Calculate sale share
-            saleShareAmount = price.mul(ownerCutPerMillion).div(ONE_MILLION);
+            saleShareAmount = (price * feesCollectorCutPerMillion) / ONE_MILLION;
             // Transfer share amount to the bid conctract Owner
             require(
                 manaToken.transferFrom(bidder, owner(), saleShareAmount),
@@ -680,10 +952,10 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
 
         // Transfer MANA from bidder to seller
         require(
-            manaToken.transferFrom(bidder, _from, price.sub(saleShareAmount)),
+            manaToken.transferFrom(bidder, _from, price - saleShareAmount),
             "Transfering MANA to owner failed"
         );
-       
+
         emit BidAccepted(
             bidId,
             msg.sender,
@@ -703,8 +975,8 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     * @param _tokenIds - uint256[] of the token ids
     * @param _bidders - address[] of the bidders
     */
-    function removeExpiredBids(address[] _tokenAddresses, uint256[] _tokenIds, address[] _bidders)
-    public 
+    function removeExpiredBids(address[] memory _tokenAddresses, uint256[] memory _tokenIds, address[] memory _bidders)
+    public
     {
         uint256 loopLength = _tokenAddresses.length;
 
@@ -715,7 +987,7 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
             _removeExpiredBid(_tokenAddresses[i], _tokenIds[i], _bidders[i]);
         }
     }
-    
+
     /**
     * @dev Remove expired bid
     * @param _tokenAddress - address of the ERC721 token
@@ -723,21 +995,21 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     * @param _bidder - address of the bidder
     */
     function _removeExpiredBid(address _tokenAddress, uint256 _tokenId, address _bidder)
-    internal 
+    internal
     {
         (uint256 bidIndex, bytes32 bidId,,,uint256 expiresAt) = getBidByBidder(
-            _tokenAddress, 
+            _tokenAddress,
             _tokenId,
             _bidder
         );
-        
+
         require(expiresAt < block.timestamp, "The bid to remove should be expired");
 
         _cancelBid(
-            bidIndex, 
-            bidId, 
-            _tokenAddress, 
-            _tokenId, 
+            bidIndex,
+            bidId,
+            _tokenAddress,
+            _tokenId,
             _bidder
         );
     }
@@ -748,19 +1020,20 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     * @param _tokenId - uint256 of the token id
     */
     function cancelBid(address _tokenAddress, uint256 _tokenId) public whenNotPaused() {
+        address sender = _msgSender();
         // Get active bid
         (uint256 bidIndex, bytes32 bidId,,,) = getBidByBidder(
-            _tokenAddress, 
+            _tokenAddress,
             _tokenId,
-            msg.sender
+            sender
         );
 
         _cancelBid(
-            bidIndex, 
-            bidId, 
-            _tokenAddress, 
-            _tokenId, 
-            msg.sender
+            bidIndex,
+            bidId,
+            _tokenAddress,
+            _tokenId,
+            sender
         );
     }
 
@@ -774,26 +1047,26 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     */
     function _cancelBid(
         uint256 _bidIndex,
-        bytes32 _bidId, 
+        bytes32 _bidId,
         address _tokenAddress,
-        uint256 _tokenId, 
+        uint256 _tokenId,
         address _bidder
-    ) 
-        internal 
+    )
+        internal
     {
         // Delete bid references
         delete bidIndexByBidId[_bidId];
         delete bidIdByTokenAndBidder[_tokenAddress][_tokenId][_bidder];
-        
+
         // Check if the bid is at the end of the mapping
-        uint256 lastBidIndex = bidCounterByToken[_tokenAddress][_tokenId].sub(1);
+        uint256 lastBidIndex = bidCounterByToken[_tokenAddress][_tokenId] - 1;
         if (lastBidIndex != _bidIndex) {
             // Move last bid to the removed place
             Bid storage lastBid = bidsByToken[_tokenAddress][_tokenId][lastBidIndex];
             bidsByToken[_tokenAddress][_tokenId][_bidIndex] = lastBid;
             bidIndexByBidId[lastBid.id] = _bidIndex;
         }
-        
+
         // Delete empty index
         delete bidsByToken[_tokenAddress][_tokenId][lastBidIndex];
 
@@ -816,9 +1089,9 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     * @param _bidder - address of the bidder
     * @return bool whether the bidder has an active bid
     */
-    function _bidderHasABid(address _tokenAddress, uint256 _tokenId, address _bidder) 
+    function _bidderHasABid(address _tokenAddress, uint256 _tokenId, address _bidder)
         internal
-        view 
+        view
         returns (bool)
     {
         bytes32 bidId = bidIdByTokenAndBidder[_tokenAddress][_tokenId][_bidder];
@@ -832,27 +1105,27 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     }
 
     /**
-    * @dev Get the active bid id and index by a bidder and an specific token. 
+    * @dev Get the active bid id and index by a bidder and an specific token.
     * @notice If the bidder has not a valid bid, the transaction will be reverted.
     * @param _tokenAddress - address of the ERC721 token
     * @param _tokenId - uint256 of the token id
     * @param _bidder - address of the bidder
-    * @return uint256 of the bid index to be used within bidsByToken mapping
-    * @return bytes32 of the bid id
-    * @return address of the bidder address
-    * @return uint256 of the bid price
-    * @return uint256 of the expiration time
+    * @return bidIndex - uint256 of the bid index to be used within bidsByToken mapping
+    * @return bidId - bytes32 of the bid id
+    * @return bidder - address of the bidder address
+    * @return price - uint256 of the bid price
+    * @return expiresAt - uint256 of the expiration time
     */
-    function getBidByBidder(address _tokenAddress, uint256 _tokenId, address _bidder) 
+    function getBidByBidder(address _tokenAddress, uint256 _tokenId, address _bidder)
         public
-        view 
+        view
         returns (
-            uint256 bidIndex, 
-            bytes32 bidId, 
-            address bidder, 
-            uint256 price, 
+            uint256 bidIndex,
+            bytes32 bidId,
+            address bidder,
+            uint256 price,
             uint256 expiresAt
-        ) 
+        )
     {
         bidId = bidIdByTokenAndBidder[_tokenAddress][_tokenId][_bidder];
         bidIndex = bidIndexByBidId[bidId];
@@ -867,18 +1140,17 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     * @param _tokenAddress - address of the ERC721 token
     * @param _tokenId - uint256 of the token id
     * @param _index - uint256 of the index
-    * @return uint256 of the bid index to be used within bidsByToken mapping
     * @return bytes32 of the bid id
     * @return address of the bidder address
     * @return uint256 of the bid price
     * @return uint256 of the expiration time
     */
-    function getBidByToken(address _tokenAddress, uint256 _tokenId, uint256 _index) 
-        public 
+    function getBidByToken(address _tokenAddress, uint256 _tokenId, uint256 _index)
+        public
         view
-        returns (bytes32, address, uint256, uint256) 
+        returns (bytes32, address, uint256, uint256)
     {
-        
+
         Bid memory bid = _getBid(_tokenAddress, _tokenId, _index);
         return (
             bid.id,
@@ -889,16 +1161,16 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     }
 
     /**
-    * @dev Get the active bid id and index by a bidder and an specific token. 
+    * @dev Get the active bid id and index by a bidder and an specific token.
     * @notice If the index is not valid, it will revert.
     * @param _tokenAddress - address of the ERC721 token
     * @param _tokenId - uint256 of the index
     * @param _index - uint256 of the index
     * @return Bid
     */
-    function _getBid(address _tokenAddress, uint256 _tokenId, uint256 _index) 
-        internal 
-        view 
+    function _getBid(address _tokenAddress, uint256 _tokenId, uint256 _index)
+        internal
+        view
         returns (Bid memory)
     {
         require(_index < bidCounterByToken[_tokenAddress][_tokenId], "Invalid index");
@@ -908,13 +1180,20 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
     /**
     * @dev Sets the share cut for the owner of the contract that's
     * charged to the seller on a successful sale
-    * @param _ownerCutPerMillion - Share amount, from 0 to 999,999
+    * @param _feesCollectorCutPerMillion - Share amount, from 0 to 999,999
     */
-    function setOwnerCutPerMillion(uint256 _ownerCutPerMillion) external onlyOwner {
-        require(_ownerCutPerMillion < ONE_MILLION, "The owner cut should be between 0 and 999,999");
+    function setFeesCollectorCutPerMillion(uint256 _feesCollectorCutPerMillion) public onlyOwner {
+        require(_feesCollectorCutPerMillion < ONE_MILLION, "The owner cut should be between 0 and 999,999");
 
-        ownerCutPerMillion = _ownerCutPerMillion;
-        emit ChangedOwnerCutPerMillion(ownerCutPerMillion);
+        feesCollectorCutPerMillion = _feesCollectorCutPerMillion;
+        emit ChangedFeesCollectorCutPerMillion(feesCollectorCutPerMillion);
+    }
+
+     /**
+    * @dev Pause the contract
+    */
+    function pause() external onlyOwner {
+        _pause();
     }
 
     /**
@@ -985,6 +1264,6 @@ contract ERC721Bid is Ownable, Pausable, ERC721BidStorage {
         require(
             manaToken.allowance(_bidder, address(this)) >= _amount,
             "The contract is not authorized to use MANA on bidder behalf"
-        );        
+        );
     }
 }

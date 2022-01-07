@@ -11,11 +11,15 @@ require('chai')
 const BN = web3.utils.BN
 const expect = require('chai').use(require('bn-chai')(BN)).expect
 
+const RoyaltiesManager = artifacts.require('RoyaltiesManager')
 const BidContract = artifacts.require('FakeBid')
 const erc20 = artifacts.require('FakeERC20')
 const Token = artifacts.require('Token')
 const ComposableToken = artifacts.require('ComposableToken')
 const TokenWithoutInterface = artifacts.require('TokenWithoutInterface')
+const ERC721TestCollection = artifacts.require('ERC721TestCollection')
+
+const zeroAddress = '0x0000000000000000000000000000000000000000'
 
 function assertEvent(log, expectedEventName, expectedArgs) {
   const { event, args } = log
@@ -75,13 +79,18 @@ contract('Bid', function([
   oneMoreBidder,
   bidderWithoutFunds,
   relayer,
+  feesCollector,
+  itemCreator,
+  itemBeneficiary,
   hacker
 ]) {
   let bidContract
+  let royaltiesManager
   let mana
   let token
   let composableToken
   let tokenWithoutInterface
+  let erc721TestCollection
 
   const fromOwner = { from: owner }
   const fromHolder = { from: holder }
@@ -92,6 +101,8 @@ contract('Bid', function([
   const fromHacker = { from: hacker }
   const tokenOne = '1'
   const tokenTwo = '2'
+  const tokenThree = '3'
+  const tokenFour = '4'
   const unownedToken = '100'
   const price = web3.utils.toBN(web3.utils.toWei('100', 'ether'))
   const newPrice = web3.utils.toBN(web3.utils.toWei('10', 'ether'))
@@ -99,12 +110,10 @@ contract('Bid', function([
   const twoWeeksInSeconds = duration.weeks(2)
   const moreThanSixMonthInSeconds = duration.weeks(26) + duration.seconds(1)
   const domain = 'Decentraland Bid'
-  const version = '1'
+  const version = '2'
 
   const creationParams = {
-    ...fromOwner,
-    gas: 6e6,
-    gasPrice: 21e9
+    ...fromOwner
   }
 
   async function placeAndCheckBid(
@@ -164,7 +173,19 @@ contract('Bid', function([
     token = await Token.new(creationParams)
     composableToken = await ComposableToken.new(creationParams)
     tokenWithoutInterface = await TokenWithoutInterface.new(creationParams)
-    bidContract = await BidContract.new(mana.address, owner, 0, creationParams)
+    erc721TestCollection = await ERC721TestCollection.new(creationParams)
+
+    royaltiesManager = await RoyaltiesManager.new(creationParams)
+
+    bidContract = await BidContract.new(
+      owner,
+      feesCollector,
+      mana.address,
+      royaltiesManager.address,
+      0,
+      0,
+      creationParams
+    )
 
     await mana.mint(initialBalance, bidder)
     await mana.mint(initialBalance, anotherBidder)
@@ -172,9 +193,16 @@ contract('Bid', function([
 
     await token.mint(holder, tokenOne)
     await token.mint(holder, tokenTwo)
+    await token.mint(holder, tokenThree)
+    await token.mint(holder, tokenFour)
 
     await composableToken.mint(holder, tokenOne)
     await composableToken.mint(holder, tokenTwo)
+
+    await erc721TestCollection.mint(holder, tokenOne)
+    await erc721TestCollection.mint(holder, tokenTwo)
+    await erc721TestCollection.mint(holder, tokenThree)
+    await erc721TestCollection.mint(holder, tokenFour)
 
     await mana.approve(bidContract.address, initialBalance, fromBidder)
     await mana.approve(bidContract.address, initialBalance, fromAnotherBidder)
@@ -408,7 +436,7 @@ contract('Bid', function([
           fingerprint,
           fromBidder
         ),
-        'Token fingerprint is not valid'
+        'ERC721Bid#_requireComposableERC721: INVALID_FINGERPRINT'
       )
     })
 
@@ -421,7 +449,7 @@ contract('Bid', function([
           twoWeeksInSeconds,
           fromBidder
         ),
-        'Token has an invalid ERC721 implementation'
+        'ERC721Bid#_requireERC721: INVALID_CONTRACT_IMPLEMENTATION'
       )
     })
 
@@ -434,7 +462,7 @@ contract('Bid', function([
           twoWeeksInSeconds,
           fromBidder
         ),
-        'Token should be a contract'
+        'ERC721Bid#_requireERC721: ADDRESS_NOT_A_CONTRACT'
       )
     })
 
@@ -447,7 +475,7 @@ contract('Bid', function([
           twoWeeksInSeconds,
           fromBidderWithoutFunds
         ),
-        'Insufficient funds'
+        'ERC721Bid#_requireBidderBalance: INSUFFICIENT_FUNDS'
       )
     })
 
@@ -461,7 +489,7 @@ contract('Bid', function([
           twoWeeksInSeconds,
           fromBidder
         ),
-        'The contract is not authorized to use MANA on bidder behalf'
+        'ERC721Bid#_requireBidderBalance: CONTRACT_NOT_AUTHORIZED'
       )
     })
 
@@ -474,7 +502,7 @@ contract('Bid', function([
           twoWeeksInSeconds,
           fromBidder
         ),
-        'Price should be bigger than 0'
+        'ERC721Bid#_placeBid: PRICE_MUST_BE_GT_0'
       )
     })
 
@@ -488,7 +516,7 @@ contract('Bid', function([
           fiftyNineSeconds,
           fromBidder
         ),
-        'The bid should last at least one minute'
+        'ERC721Bid#_placeBid: DURATION_MUST_BE_GTE_MIN_BID_DURATION'
       )
     })
 
@@ -501,7 +529,7 @@ contract('Bid', function([
           moreThanSixMonthInSeconds,
           fromBidder
         ),
-        'The bid can not last longer than 6 months'
+        'ERC721Bid#_placeBid: DURATION_MUST_BE_LTE_MAX_BID_DURATION'
       )
     })
 
@@ -527,7 +555,7 @@ contract('Bid', function([
           twoWeeksInSeconds,
           fromBidder
         ),
-        'The token should have an owner different from the sender'
+        'ERC721Bid#_placeBid: ALREADY_OWNED_TOKEN'
       )
     })
   })
@@ -544,11 +572,9 @@ contract('Bid', function([
     })
 
     it('should cancel a bid', async function() {
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       let bidCounter = await bidContract.bidCounterByToken(
         token.address,
@@ -575,11 +601,9 @@ contract('Bid', function([
     })
 
     it('should cancel a bid :: Relayed EIP721', async function() {
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       let bidCounter = await bidContract.bidCounterByToken(
         token.address,
@@ -674,14 +698,14 @@ contract('Bid', function([
     it('reverts when cancelling invalid bid', async function() {
       await assertRevert(
         bidContract.cancelBid(token.address, tokenOne, fromAnotherBidder),
-        'Bidder has not an active bid for this token'
+        'ERC721Bid#getBidByBidder: BIDDER_HAS_NOT_ACTIVE_BIDS_FOR_TOKEN'
       )
     })
 
     it('reverts when cancelling by hacker', async function() {
       await assertRevert(
         bidContract.cancelBid(token.address, tokenOne, fromHacker),
-        'Bidder has not an active bid for this token'
+        'ERC721Bid#getBidByBidder: BIDDER_HAS_NOT_ACTIVE_BIDS_FOR_TOKEN'
       )
     })
   })
@@ -717,11 +741,9 @@ contract('Bid', function([
       let ownerOfTokenOne = await token.ownerOf(tokenOne)
       ownerOfTokenOne.should.be.equal(holder)
 
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       await token.safeTransferFromWithBytes(
         holder,
@@ -768,11 +790,9 @@ contract('Bid', function([
       let ownerOfTokenOne = await token.ownerOf(tokenOne)
       ownerOfTokenOne.should.be.equal(holder)
 
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       const functionSignature = web3.eth.abi.encodeFunctionCall(
         {
@@ -853,11 +873,9 @@ contract('Bid', function([
       let ownerOfTokenOne = await composableToken.ownerOf(tokenOne)
       ownerOfTokenOne.should.be.equal(holder)
 
-      const bidId = (await bidContract.getBidByToken(
-        composableToken.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(composableToken.address, tokenOne, 0)
+      )[0]
 
       await composableToken.safeTransferFromWithBytes(
         holder,
@@ -901,17 +919,13 @@ contract('Bid', function([
         [0, 1, 2]
       )
 
-      const firstBidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const firstBidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
-      const secondBidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        1
-      ))[0]
+      const secondBidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 1)
+      )[0]
 
       await token.safeTransferFromWithBytes(
         holder,
@@ -961,17 +975,13 @@ contract('Bid', function([
         [0, 1, 2]
       )
 
-      let firstBidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      let firstBidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
-      let bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        1
-      ))[0]
+      let bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 1)
+      )[0]
 
       // Accept bid for tokenOne
       await token.safeTransferFromWithBytes(
@@ -999,15 +1009,15 @@ contract('Bid', function([
 
       await assertRevert(
         bidContract.getBidByToken(token.address, tokenOne, 0),
-        'Invalid index'
+        'ERC721Bid#_getBid: INVALID_INDEX'
       )
       await assertRevert(
         bidContract.getBidByToken(token.address, tokenOne, 1),
-        'Invalid index'
+        'ERC721Bid#_getBid: INVALID_INDEX'
       )
       await assertRevert(
         bidContract.getBidByToken(token.address, tokenOne, 2),
-        'Invalid index'
+        'ERC721Bid#_getBid: INVALID_INDEX'
       )
 
       await assertRevert(
@@ -1041,11 +1051,9 @@ contract('Bid', function([
     })
 
     it('reverts when accepting invalid tokenId', async function() {
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       await assertRevert(
         token.safeTransferFromWithBytes(
@@ -1059,11 +1067,9 @@ contract('Bid', function([
     })
 
     it('reverts when accepting invalid bidId', async function() {
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       await bidContract.cancelBid(token.address, tokenOne, fromBidder)
 
@@ -1074,16 +1080,15 @@ contract('Bid', function([
           tokenOne,
           bidId,
           fromHolder
-        )
+        ),
+        'ERC721Bid#_getBid: INVALID_INDEX'
       )
     })
 
     it('reverts when accepting with insufficient funds', async function() {
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       await mana.transfer(holder, initialBalance, fromBidder)
 
@@ -1099,11 +1104,9 @@ contract('Bid', function([
     })
 
     it('reverts when accepting without approved contract', async function() {
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       await mana.approve(bidContract.address, 0, fromBidder)
 
@@ -1119,11 +1122,9 @@ contract('Bid', function([
     })
 
     it('reverts when accepting bid for another token with the same index and id', async function() {
-      const bidId = (await bidContract.getBidByToken(
-        composableToken.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(composableToken.address, tokenOne, 0)
+      )[0]
 
       await assertRevert(
         token.safeTransferFromWithBytes(
@@ -1139,11 +1140,9 @@ contract('Bid', function([
     it('reverts when accepting an expired bid', async function() {
       await increaseTime(twoWeeksInSeconds + duration.minutes(1))
 
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       await assertRevert(
         token.safeTransferFromWithBytes(
@@ -1152,16 +1151,15 @@ contract('Bid', function([
           tokenOne,
           bidId,
           fromHolder
-        )
+        ),
+        'ERC721Bid#onERC721Received: INVALID_BID'
       )
     })
 
     it('reverts when accepting with fingerprint changed', async function() {
-      const bidId = (await bidContract.getBidByToken(
-        composableToken.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(composableToken.address, tokenOne, 0)
+      )[0]
 
       await composableToken.setFingerprint(tokenOne, 2)
 
@@ -1177,35 +1175,303 @@ contract('Bid', function([
     })
   })
 
-  describe('Share sale', function() {
-    it('should share sale', async function() {
+  describe('Fees', function() {
+    describe('feesCollectorCutPerMillion', function() {
+      it('should be initialized to 0', async function() {
+        const response = await bidContract.feesCollectorCutPerMillion()
+        response.should.be.eq.BN(0)
+      })
+
+      it('should change fee collector sale cut', async function() {
+        const feesCollectorCut = 10
+
+        const { logs } = await bidContract.setFeesCollectorCutPerMillion(
+          feesCollectorCut,
+          {
+            from: owner
+          }
+        )
+        let response = await bidContract.feesCollectorCutPerMillion()
+        response.should.be.eq.BN(feesCollectorCut)
+        logs.length.should.be.equal(1)
+        assertEvent(logs[0], 'ChangedFeesCollectorCutPerMillion', {
+          _feesCollectorCutPerMillion: feesCollectorCut
+        })
+
+        await bidContract.setFeesCollectorCutPerMillion(0, {
+          from: owner
+        })
+        response = await bidContract.feesCollectorCutPerMillion()
+        response.should.be.eq.BN(0)
+      })
+
+      it('should change fee collector sale cut :: Relayed EIP721', async function() {
+        const feesCollectorCut = 10
+
+        const functionSignature = web3.eth.abi.encodeFunctionCall(
+          {
+            inputs: [
+              {
+                internalType: 'uint256',
+                name: '_feesCollectorCutPerMillion',
+                type: 'uint256'
+              }
+            ],
+            name: 'setFeesCollectorCutPerMillion',
+            outputs: [],
+            stateMutability: 'nonpayable',
+            type: 'function'
+          },
+          [feesCollectorCut]
+        )
+
+        const { logs } = await sendMetaTx(
+          bidContract,
+          functionSignature,
+          owner,
+          relayer,
+          null,
+          domain,
+          version
+        )
+
+        logs.length.should.be.equal(2)
+        logs.shift()
+
+        let response = await bidContract.feesCollectorCutPerMillion()
+        response.should.be.eq.BN(feesCollectorCut)
+        logs.length.should.be.equal(1)
+        assertEvent(logs[0], 'ChangedFeesCollectorCutPerMillion', {
+          _feesCollectorCutPerMillion: feesCollectorCut
+        })
+      })
+
+      it('should fail to change fee collector cut (% invalid above)', async function() {
+        await assertRevert(
+          bidContract.setFeesCollectorCutPerMillion(10000000, { from: owner }),
+          'ERC721Bid#setFeesCollectorCutPerMillion: TOTAL_FEES_MUST_BE_BETWEEN_0_AND_999999'
+        )
+      })
+
+      it('should fail to change fee collector cut (% invalid above along with royalties cut)', async function() {
+        await bidContract.setRoyaltiesCutPerMillion(1, { from: owner })
+
+        await assertRevert(
+          bidContract.setFeesCollectorCutPerMillion(999999, { from: owner }),
+          'ERC721Bid#setFeesCollectorCutPerMillion: TOTAL_FEES_MUST_BE_BETWEEN_0_AND_999999'
+        )
+      })
+
+      it('should fail to change fee collector cut (not owner)', async function() {
+        const feesCollectorCut = 10
+
+        await assertRevert(
+          bidContract.setFeesCollectorCutPerMillion(feesCollectorCut, {
+            from: holder
+          }),
+          'Ownable: caller is not the owner'
+        )
+      })
+
+      it('should fail to change fee collector cut (not owner) :: Relayed EIP721', async function() {
+        const feesCollectorCut = 10
+
+        const functionSignature = web3.eth.abi.encodeFunctionCall(
+          {
+            inputs: [
+              {
+                internalType: 'uint256',
+                name: '_feesCollectorCutPerMillion',
+                type: 'uint256'
+              }
+            ],
+            name: 'setFeesCollectorCutPerMillion',
+            outputs: [],
+            stateMutability: 'nonpayable',
+            type: 'function'
+          },
+          [feesCollectorCut]
+        )
+
+        await assertRevert(
+          sendMetaTx(
+            bidContract,
+            functionSignature,
+            holder,
+            relayer,
+            null,
+            domain,
+            version
+          )
+        )
+      })
+    })
+
+    describe('royaltiesCutPerMillion', function() {
+      it('should be initialized to 0', async function() {
+        const response = await bidContract.royaltiesCutPerMillion()
+        response.should.be.eq.BN(0)
+      })
+
+      it('should change royalties cut', async function() {
+        const royaltiesCut = 10
+
+        const { logs } = await bidContract.setRoyaltiesCutPerMillion(
+          royaltiesCut,
+          {
+            from: owner
+          }
+        )
+        let response = await bidContract.royaltiesCutPerMillion()
+        response.should.be.eq.BN(royaltiesCut)
+        logs.length.should.be.equal(1)
+        assertEvent(logs[0], 'ChangedRoyaltiesCutPerMillion', {
+          _royaltiesCutPerMillion: royaltiesCut
+        })
+
+        await bidContract.setRoyaltiesCutPerMillion(0, {
+          from: owner
+        })
+        response = await bidContract.royaltiesCutPerMillion()
+        response.should.be.eq.BN(0)
+      })
+
+      it('should change royalties cut :: Relayed EIP721', async function() {
+        const royaltiesCut = 10
+
+        const functionSignature = web3.eth.abi.encodeFunctionCall(
+          {
+            inputs: [
+              {
+                internalType: 'uint256',
+                name: '_royaltiesCutPerMillion',
+                type: 'uint256'
+              }
+            ],
+            name: 'setRoyaltiesCutPerMillion',
+            outputs: [],
+            stateMutability: 'nonpayable',
+            type: 'function'
+          },
+          [royaltiesCut]
+        )
+
+        const { logs } = await sendMetaTx(
+          bidContract,
+          functionSignature,
+          owner,
+          relayer,
+          null,
+          domain,
+          version
+        )
+
+        logs.length.should.be.equal(2)
+        logs.shift()
+
+        let response = await bidContract.royaltiesCutPerMillion()
+        response.should.be.eq.BN(royaltiesCut)
+        logs.length.should.be.equal(1)
+        assertEvent(logs[0], 'ChangedRoyaltiesCutPerMillion', {
+          _royaltiesCutPerMillion: royaltiesCut
+        })
+      })
+
+      it('should fail to change royalties cut (% invalid above)', async function() {
+        await assertRevert(
+          bidContract.setRoyaltiesCutPerMillion(10000000, { from: owner }),
+          'ERC721Bid#setRoyaltiesCutPerMillion: TOTAL_FEES_MUST_BE_BETWEEN_0_AND_999999'
+        )
+      })
+
+      it('should fail to change royalties cut (% invalid above along with fee collector cut)', async function() {
+        await bidContract.setFeesCollectorCutPerMillion(1, { from: owner })
+
+        await assertRevert(
+          bidContract.setRoyaltiesCutPerMillion(999999, { from: owner }),
+          'ERC721Bid#setRoyaltiesCutPerMillion: TOTAL_FEES_MUST_BE_BETWEEN_0_AND_999999'
+        )
+      })
+
+      it('should fail to change royalties cut (not owner)', async function() {
+        const royaltiesCut = 10
+
+        await assertRevert(
+          bidContract.setRoyaltiesCutPerMillion(royaltiesCut, { from: holder }),
+          'Ownable: caller is not the owner'
+        )
+      })
+
+      it('should fail to change royalties cut (not owner) :: Relayed EIP721', async function() {
+        const royaltiesCut = 10
+
+        const functionSignature = web3.eth.abi.encodeFunctionCall(
+          {
+            inputs: [
+              {
+                internalType: 'uint256',
+                name: '_royaltiesCutPerMillion',
+                type: 'uint256'
+              }
+            ],
+            name: 'setRoyaltiesCutPerMillion',
+            outputs: [],
+            stateMutability: 'nonpayable',
+            type: 'function'
+          },
+          [royaltiesCut]
+        )
+
+        await assertRevert(
+          sendMetaTx(
+            bidContract,
+            functionSignature,
+            holder,
+            relayer,
+            null,
+            domain,
+            version
+          )
+        )
+      })
+    })
+
+    it('should share sale :: set fees collector :: send cut to feesCollector', async function() {
       let bidderBalance = await mana.balanceOf(bidder)
       expect(bidderBalance).to.be.eq.BN(initialBalance)
 
       let holderBalance = await mana.balanceOf(holder)
       expect(holderBalance).to.be.eq.BN(0)
 
-      let ownerBalance = await mana.balanceOf(owner)
-      expect(ownerBalance).to.be.eq.BN(0)
+      let feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance).to.be.eq.BN(0)
+
+      let itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      let itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance).to.be.eq.BN(0)
 
       // Set 10% of bid price
-      await bidContract.setOwnerCutPerMillion(100000, fromOwner)
+      await bidContract.setFeesCollectorCutPerMillion(100000, fromOwner)
 
       await bidContract.placeBid(
-        token.address,
+        erc721TestCollection.address,
         tokenOne,
         price,
         twoWeeksInSeconds,
         fromBidder
       )
 
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(
+          erc721TestCollection.address,
+          tokenOne,
+          0
+        )
+      )[0]
 
-      await token.safeTransferFromWithBytes(
+      await erc721TestCollection.safeTransferFromWithBytes(
         holder,
         bidContract.address,
         tokenOne,
@@ -1223,7 +1489,7 @@ contract('Bid', function([
         'BidAccepted',
         {
           _id: bidId,
-          _tokenAddress: token.address,
+          _tokenAddress: erc721TestCollection.address,
           _tokenId: tokenOne,
           _bidder: bidder,
           _seller: holder,
@@ -1243,31 +1509,985 @@ contract('Bid', function([
         (bidPrice - bidPrice * 0.1).toString()
       )
 
-      ownerBalance = await mana.balanceOf(owner)
-      expect(ownerBalance.toString()).to.be.equal((bidPrice * 0.1).toString())
+      feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance.toString()).to.be.equal(
+        (bidPrice * 0.1).toString()
+      )
+
+      itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance).to.be.eq.BN(0)
     })
 
-    it('should set to 0', async function() {
-      let ownerCut = await bidContract.ownerCutPerMillion()
-      expect(ownerCut).to.be.eq.BN(0)
+    it('should share sale :: set fees collector & royalties :: receiver 0 address by success return (check mocks/RoyaltiesManager) :: send cut to feesCollector', async function() {
+      await erc721TestCollection.setCreator(zeroAddress)
+      await erc721TestCollection.setBeneficiary(zeroAddress)
 
-      await bidContract.setOwnerCutPerMillion(10000, fromOwner)
-      ownerCut = await bidContract.ownerCutPerMillion()
-      expect(ownerCut).to.be.eq.BN(web3.utils.toBN(10000))
+      let bidderBalance = await mana.balanceOf(bidder)
+      expect(bidderBalance).to.be.eq.BN(initialBalance)
 
-      await bidContract.setOwnerCutPerMillion(0, fromOwner)
-      ownerCut = await bidContract.ownerCutPerMillion()
-      expect(ownerCut).to.be.eq.BN(0)
+      let holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance).to.be.eq.BN(0)
+
+      let feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance).to.be.eq.BN(0)
+
+      let itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      let itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance).to.be.eq.BN(0)
+
+      // Set 20% of bid price
+      await bidContract.setFeesCollectorCutPerMillion(100000, fromOwner)
+      await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
+
+      await bidContract.placeBid(
+        erc721TestCollection.address,
+        tokenThree,
+        price,
+        twoWeeksInSeconds,
+        fromBidder
+      )
+
+      const bidId = (
+        await bidContract.getBidByToken(
+          erc721TestCollection.address,
+          tokenThree,
+          0
+        )
+      )[0]
+
+      await erc721TestCollection.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenThree,
+        bidId,
+        fromHolder
+      )
+
+      const bidPrice = parseInt(price.toString())
+
+      const logs = await getEvents(bidContract, 'BidAccepted')
+      expect(logs.length).to.be.equal(1)
+      assertEvent(
+        { event: logs[0].event, args: logs[0].returnValues },
+        'BidAccepted',
+        {
+          _id: bidId,
+          _tokenAddress: erc721TestCollection.address,
+          _tokenId: tokenThree,
+          _bidder: bidder,
+          _seller: holder,
+          _price: price.toString(),
+          _fee: (bidPrice * 0.2).toString()
+        }
+      )
+
+      bidderBalance = await mana.balanceOf(bidder)
+
+      scientificToDecimal(bidderBalance.toString()).should.be.equal(
+        scientificToDecimal(initialBalance.toString() - bidPrice)
+      )
+
+      holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance.toString()).to.be.equal(
+        (bidPrice - bidPrice * 0.2).toString()
+      )
+
+      feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance.toString()).to.be.equal(
+        (bidPrice * 0.2).toString()
+      )
+
+      itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance.toString()).to.be.eq.BN((0).toString())
     })
 
-    it('reverts when calling by hacker', async function() {
-      await assertRevert(bidContract.setOwnerCutPerMillion(1000, fromHacker))
+    it('should share sale :: set fees collector & royalties :: receiver 0 address by revert (check mocks/RoyaltiesManager) :: send cut to feesCollector', async function() {
+      let bidderBalance = await mana.balanceOf(bidder)
+      expect(bidderBalance).to.be.eq.BN(initialBalance)
+
+      let holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance).to.be.eq.BN(0)
+
+      let feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance).to.be.eq.BN(0)
+
+      let itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      let itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance).to.be.eq.BN(0)
+
+      // Set 20% of bid price
+      await bidContract.setFeesCollectorCutPerMillion(100000, fromOwner)
+      await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
+
+      await bidContract.placeBid(
+        token.address,
+        tokenFour,
+        price,
+        twoWeeksInSeconds,
+        fromBidder
+      )
+
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenFour, 0)
+      )[0]
+
+      await token.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenFour,
+        bidId,
+        fromHolder
+      )
+
+      const bidPrice = parseInt(price.toString())
+
+      const logs = await getEvents(bidContract, 'BidAccepted')
+      expect(logs.length).to.be.equal(1)
+      assertEvent(
+        { event: logs[0].event, args: logs[0].returnValues },
+        'BidAccepted',
+        {
+          _id: bidId,
+          _tokenAddress: token.address,
+          _tokenId: tokenFour,
+          _bidder: bidder,
+          _seller: holder,
+          _price: price.toString(),
+          _fee: (bidPrice * 0.2).toString()
+        }
+      )
+
+      bidderBalance = await mana.balanceOf(bidder)
+
+      scientificToDecimal(bidderBalance.toString()).should.be.equal(
+        scientificToDecimal(initialBalance.toString() - bidPrice)
+      )
+
+      holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance.toString()).to.be.equal(
+        (bidPrice - bidPrice * 0.2).toString()
+      )
+
+      feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance.toString()).to.be.equal(
+        (bidPrice * 0.2).toString()
+      )
+
+      itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance.toString()).to.be.eq.BN((0).toString())
     })
 
-    it('reverts when set bigger than 1000000', async function() {
-      await assertRevert(
-        bidContract.setOwnerCutPerMillion(1000001, fromOwner),
-        'The owner cut should be between 0 and 999,999'
+    it('should share sale :: set fees collector & royalties :: receiver 0 address by revert (not a valid royaltiesManager) :: send cut to feesCollector', async function() {
+      let bidderBalance = await mana.balanceOf(bidder)
+      expect(bidderBalance).to.be.eq.BN(initialBalance)
+
+      let holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance).to.be.eq.BN(0)
+
+      let feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance).to.be.eq.BN(0)
+
+      let itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      let itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance).to.be.eq.BN(0)
+
+      // Invalid Royalties Manager
+      await bidContract.setRoyaltiesManager(mana.address, fromOwner)
+      // Set 20% of bid price
+      await bidContract.setFeesCollectorCutPerMillion(100000, fromOwner)
+      await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
+
+      await bidContract.placeBid(
+        erc721TestCollection.address,
+        tokenOne,
+        price,
+        twoWeeksInSeconds,
+        fromBidder
+      )
+
+      const bidId = (
+        await bidContract.getBidByToken(
+          erc721TestCollection.address,
+          tokenOne,
+          0
+        )
+      )[0]
+
+      await erc721TestCollection.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenOne,
+        bidId,
+        fromHolder
+      )
+
+      const bidPrice = parseInt(price.toString())
+
+      const logs = await getEvents(bidContract, 'BidAccepted')
+      expect(logs.length).to.be.equal(1)
+      assertEvent(
+        { event: logs[0].event, args: logs[0].returnValues },
+        'BidAccepted',
+        {
+          _id: bidId,
+          _tokenAddress: erc721TestCollection.address,
+          _tokenId: tokenOne,
+          _bidder: bidder,
+          _seller: holder,
+          _price: price.toString(),
+          _fee: (bidPrice * 0.2).toString()
+        }
+      )
+
+      bidderBalance = await mana.balanceOf(bidder)
+
+      scientificToDecimal(bidderBalance.toString()).should.be.equal(
+        scientificToDecimal(initialBalance.toString() - bidPrice)
+      )
+
+      holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance.toString()).to.be.equal(
+        (bidPrice - bidPrice * 0.2).toString()
+      )
+
+      feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance.toString()).to.be.equal(
+        (bidPrice * 0.2).toString()
+      )
+
+      itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance.toString()).to.be.eq.BN((0).toString())
+    })
+
+    it('should share sale :: set royalties :: receiver 0 address by success return (check mocks/RoyaltiesManager) :: send cut to feesCollector', async function() {
+      await erc721TestCollection.setCreator(zeroAddress)
+      await erc721TestCollection.setBeneficiary(zeroAddress)
+
+      let bidderBalance = await mana.balanceOf(bidder)
+      expect(bidderBalance).to.be.eq.BN(initialBalance)
+
+      let holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance).to.be.eq.BN(0)
+
+      let feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance).to.be.eq.BN(0)
+
+      let itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      let itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance).to.be.eq.BN(0)
+
+      // Set 10% of bid price
+      await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
+
+      await bidContract.placeBid(
+        erc721TestCollection.address,
+        tokenThree,
+        price,
+        twoWeeksInSeconds,
+        fromBidder
+      )
+
+      const bidId = (
+        await bidContract.getBidByToken(
+          erc721TestCollection.address,
+          tokenThree,
+          0
+        )
+      )[0]
+
+      await erc721TestCollection.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenThree,
+        bidId,
+        fromHolder
+      )
+
+      const bidPrice = parseInt(price.toString())
+
+      const logs = await getEvents(bidContract, 'BidAccepted')
+      expect(logs.length).to.be.equal(1)
+      assertEvent(
+        { event: logs[0].event, args: logs[0].returnValues },
+        'BidAccepted',
+        {
+          _id: bidId,
+          _tokenAddress: erc721TestCollection.address,
+          _tokenId: tokenThree,
+          _bidder: bidder,
+          _seller: holder,
+          _price: price.toString(),
+          _fee: (bidPrice * 0.1).toString()
+        }
+      )
+
+      bidderBalance = await mana.balanceOf(bidder)
+
+      scientificToDecimal(bidderBalance.toString()).should.be.equal(
+        scientificToDecimal(initialBalance.toString() - bidPrice)
+      )
+
+      holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance.toString()).to.be.equal(
+        (bidPrice - bidPrice * 0.1).toString()
+      )
+
+      feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance.toString()).to.be.equal(
+        (bidPrice * 0.1).toString()
+      )
+
+      itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance.toString()).to.be.eq.BN(
+        (bidPrice * 0.0).toString()
+      )
+
+      itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance.toString()).to.be.eq.BN(
+        (bidPrice * 0.0).toString()
+      )
+    })
+
+    it('should share sale :: set royalties :: receiver 0 address by revert (check mocks/RoyaltiesManager) :: send cut to feesCollector', async function() {
+      let bidderBalance = await mana.balanceOf(bidder)
+      expect(bidderBalance).to.be.eq.BN(initialBalance)
+
+      let holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance).to.be.eq.BN(0)
+
+      let feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance).to.be.eq.BN(0)
+
+      let itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      let itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance).to.be.eq.BN(0)
+
+      // Set 10% of bid price
+      await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
+
+      await bidContract.placeBid(
+        token.address,
+        tokenFour,
+        price,
+        twoWeeksInSeconds,
+        fromBidder
+      )
+
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenFour, 0)
+      )[0]
+
+      await token.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenFour,
+        bidId,
+        fromHolder
+      )
+
+      const bidPrice = parseInt(price.toString())
+
+      const logs = await getEvents(bidContract, 'BidAccepted')
+      expect(logs.length).to.be.equal(1)
+      assertEvent(
+        { event: logs[0].event, args: logs[0].returnValues },
+        'BidAccepted',
+        {
+          _id: bidId,
+          _tokenAddress: token.address,
+          _tokenId: tokenFour,
+          _bidder: bidder,
+          _seller: holder,
+          _price: price.toString(),
+          _fee: (bidPrice * 0.1).toString()
+        }
+      )
+
+      bidderBalance = await mana.balanceOf(bidder)
+
+      scientificToDecimal(bidderBalance.toString()).should.be.equal(
+        scientificToDecimal(initialBalance.toString() - bidPrice)
+      )
+
+      holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance.toString()).to.be.equal(
+        (bidPrice - bidPrice * 0.1).toString()
+      )
+
+      feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance.toString()).to.be.equal(
+        (bidPrice * 0.1).toString()
+      )
+
+      itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance.toString()).to.be.eq.BN(
+        (bidPrice * 0.0).toString()
+      )
+
+      itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance.toString()).to.be.eq.BN(
+        (bidPrice * 0.0).toString()
+      )
+    })
+
+    it('should share sale :: set royalties :: receiver 0 address by revert (not a valid royaltiesManager) :: send cut to feesCollector', async function() {
+      let bidderBalance = await mana.balanceOf(bidder)
+      expect(bidderBalance).to.be.eq.BN(initialBalance)
+
+      let holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance).to.be.eq.BN(0)
+
+      let feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance).to.be.eq.BN(0)
+
+      let itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      let itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance).to.be.eq.BN(0)
+
+      // Invalid Royalties Manager
+      await bidContract.setRoyaltiesManager(mana.address, fromOwner)
+      // Set 10% of bid price
+      await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
+
+      await bidContract.placeBid(
+        erc721TestCollection.address,
+        tokenOne,
+        price,
+        twoWeeksInSeconds,
+        fromBidder
+      )
+
+      const bidId = (
+        await bidContract.getBidByToken(
+          erc721TestCollection.address,
+          tokenOne,
+          0
+        )
+      )[0]
+
+      await erc721TestCollection.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenOne,
+        bidId,
+        fromHolder
+      )
+
+      const bidPrice = parseInt(price.toString())
+
+      const logs = await getEvents(bidContract, 'BidAccepted')
+      expect(logs.length).to.be.equal(1)
+      assertEvent(
+        { event: logs[0].event, args: logs[0].returnValues },
+        'BidAccepted',
+        {
+          _id: bidId,
+          _tokenAddress: erc721TestCollection.address,
+          _tokenId: tokenOne,
+          _bidder: bidder,
+          _seller: holder,
+          _price: price.toString(),
+          _fee: (bidPrice * 0.1).toString()
+        }
+      )
+
+      bidderBalance = await mana.balanceOf(bidder)
+
+      scientificToDecimal(bidderBalance.toString()).should.be.equal(
+        scientificToDecimal(initialBalance.toString() - bidPrice)
+      )
+
+      holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance.toString()).to.be.equal(
+        (bidPrice - bidPrice * 0.1).toString()
+      )
+
+      feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance.toString()).to.be.equal(
+        (bidPrice * 0.1).toString()
+      )
+
+      itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance.toString()).to.be.eq.BN(
+        (bidPrice * 0.0).toString()
+      )
+
+      itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance.toString()).to.be.eq.BN(
+        (bidPrice * 0.0).toString()
+      )
+    })
+
+    it('should share sale :: set royalties :: receiver item creator :: send cut to royaltiesReceiver', async function() {
+      await erc721TestCollection.setCreator(itemCreator)
+      await erc721TestCollection.setBeneficiary(zeroAddress)
+
+      let bidderBalance = await mana.balanceOf(bidder)
+      expect(bidderBalance).to.be.eq.BN(initialBalance)
+
+      let holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance).to.be.eq.BN(0)
+
+      let feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance).to.be.eq.BN(0)
+
+      let itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      let itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance).to.be.eq.BN(0)
+
+      // Set 10% of bid price
+      await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
+
+      await bidContract.placeBid(
+        erc721TestCollection.address,
+        tokenOne,
+        price,
+        twoWeeksInSeconds,
+        fromBidder
+      )
+
+      const bidId = (
+        await bidContract.getBidByToken(
+          erc721TestCollection.address,
+          tokenOne,
+          0
+        )
+      )[0]
+
+      await erc721TestCollection.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenOne,
+        bidId,
+        fromHolder
+      )
+
+      const bidPrice = parseInt(price.toString())
+
+      const logs = await getEvents(bidContract, 'BidAccepted')
+      expect(logs.length).to.be.equal(1)
+      assertEvent(
+        { event: logs[0].event, args: logs[0].returnValues },
+        'BidAccepted',
+        {
+          _id: bidId,
+          _tokenAddress: erc721TestCollection.address,
+          _tokenId: tokenOne,
+          _bidder: bidder,
+          _seller: holder,
+          _price: price.toString(),
+          _fee: (bidPrice * 0.1).toString()
+        }
+      )
+
+      bidderBalance = await mana.balanceOf(bidder)
+
+      scientificToDecimal(bidderBalance.toString()).should.be.equal(
+        scientificToDecimal(initialBalance.toString() - bidPrice)
+      )
+
+      holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance.toString()).to.be.equal(
+        (bidPrice - bidPrice * 0.1).toString()
+      )
+
+      feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance.toString()).to.be.equal(
+        (bidPrice * 0).toString()
+      )
+
+      itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance.toString()).to.be.eq.BN(
+        (bidPrice * 0.1).toString()
+      )
+
+      itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance.toString()).to.be.eq.BN((0).toString())
+    })
+
+    it('should share sale :: set royalties :: receiver item beneficiary :: send cut to royaltiesReceiver', async function() {
+      await erc721TestCollection.setCreator(itemCreator)
+      await erc721TestCollection.setBeneficiary(itemBeneficiary)
+
+      let bidderBalance = await mana.balanceOf(bidder)
+      expect(bidderBalance).to.be.eq.BN(initialBalance)
+
+      let holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance).to.be.eq.BN(0)
+
+      let feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance).to.be.eq.BN(0)
+
+      let itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      let itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance).to.be.eq.BN(0)
+
+      // Set 10% of bid price
+      await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
+
+      await bidContract.placeBid(
+        erc721TestCollection.address,
+        tokenTwo,
+        price,
+        twoWeeksInSeconds,
+        fromBidder
+      )
+
+      const bidId = (
+        await bidContract.getBidByToken(
+          erc721TestCollection.address,
+          tokenTwo,
+          0
+        )
+      )[0]
+
+      await erc721TestCollection.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenTwo,
+        bidId,
+        fromHolder
+      )
+
+      const bidPrice = parseInt(price.toString())
+
+      const logs = await getEvents(bidContract, 'BidAccepted')
+      expect(logs.length).to.be.equal(1)
+      assertEvent(
+        { event: logs[0].event, args: logs[0].returnValues },
+        'BidAccepted',
+        {
+          _id: bidId,
+          _tokenAddress: erc721TestCollection.address,
+          _tokenId: tokenTwo,
+          _bidder: bidder,
+          _seller: holder,
+          _price: price.toString(),
+          _fee: (bidPrice * 0.1).toString()
+        }
+      )
+
+      bidderBalance = await mana.balanceOf(bidder)
+
+      scientificToDecimal(bidderBalance.toString()).should.be.equal(
+        scientificToDecimal(initialBalance.toString() - bidPrice)
+      )
+
+      holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance.toString()).to.be.equal(
+        (bidPrice - bidPrice * 0.1).toString()
+      )
+
+      feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance.toString()).to.be.equal(
+        (bidPrice * 0).toString()
+      )
+
+      itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance.toString()).to.be.eq.BN(
+        (bidPrice * 0.0).toString()
+      )
+
+      itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance.toString()).to.be.eq.BN(
+        (bidPrice * 0.1).toString()
+      )
+    })
+
+    it('should share sale :: set royalties :: receiver item beneficiary :: send cut to royaltiesReceiver', async function() {
+      await erc721TestCollection.setCreator(itemCreator)
+      await erc721TestCollection.setBeneficiary(itemBeneficiary)
+
+      let bidderBalance = await mana.balanceOf(bidder)
+      expect(bidderBalance).to.be.eq.BN(initialBalance)
+
+      let holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance).to.be.eq.BN(0)
+
+      let feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance).to.be.eq.BN(0)
+
+      let itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      let itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance).to.be.eq.BN(0)
+
+      // Set 10% of bid price
+      await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
+
+      await bidContract.placeBid(
+        erc721TestCollection.address,
+        tokenTwo,
+        price,
+        twoWeeksInSeconds,
+        fromBidder
+      )
+
+      const bidId = (
+        await bidContract.getBidByToken(
+          erc721TestCollection.address,
+          tokenTwo,
+          0
+        )
+      )[0]
+
+      await erc721TestCollection.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenTwo,
+        bidId,
+        fromHolder
+      )
+
+      const bidPrice = parseInt(price.toString())
+
+      const logs = await getEvents(bidContract, 'BidAccepted')
+      expect(logs.length).to.be.equal(1)
+      assertEvent(
+        { event: logs[0].event, args: logs[0].returnValues },
+        'BidAccepted',
+        {
+          _id: bidId,
+          _tokenAddress: erc721TestCollection.address,
+          _tokenId: tokenTwo,
+          _bidder: bidder,
+          _seller: holder,
+          _price: price.toString(),
+          _fee: (bidPrice * 0.1).toString()
+        }
+      )
+
+      bidderBalance = await mana.balanceOf(bidder)
+
+      scientificToDecimal(bidderBalance.toString()).should.be.equal(
+        scientificToDecimal(initialBalance.toString() - bidPrice)
+      )
+
+      holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance.toString()).to.be.equal(
+        (bidPrice - bidPrice * 0.1).toString()
+      )
+
+      feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance.toString()).to.be.equal(
+        (bidPrice * 0).toString()
+      )
+
+      itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance.toString()).to.be.eq.BN(
+        (bidPrice * 0.0).toString()
+      )
+
+      itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance.toString()).to.be.eq.BN(
+        (bidPrice * 0.1).toString()
+      )
+    })
+
+    it('should share sale :: set fees collector & royalties :: valid creator :: send cut to feesCollector & royaltiesReceiver', async function() {
+      await erc721TestCollection.setCreator(itemCreator)
+      await erc721TestCollection.setBeneficiary(zeroAddress)
+
+      let bidderBalance = await mana.balanceOf(bidder)
+      expect(bidderBalance).to.be.eq.BN(initialBalance)
+
+      let holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance).to.be.eq.BN(0)
+
+      let feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance).to.be.eq.BN(0)
+
+      let itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      let itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance).to.be.eq.BN(0)
+
+      // Set 20% of bid price
+      await bidContract.setFeesCollectorCutPerMillion(100000, fromOwner)
+      await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
+
+      await bidContract.placeBid(
+        erc721TestCollection.address,
+        tokenOne,
+        price,
+        twoWeeksInSeconds,
+        fromBidder
+      )
+
+      const bidId = (
+        await bidContract.getBidByToken(
+          erc721TestCollection.address,
+          tokenOne,
+          0
+        )
+      )[0]
+
+      await erc721TestCollection.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenOne,
+        bidId,
+        fromHolder
+      )
+
+      const bidPrice = parseInt(price.toString())
+
+      const logs = await getEvents(bidContract, 'BidAccepted')
+      expect(logs.length).to.be.equal(1)
+      assertEvent(
+        { event: logs[0].event, args: logs[0].returnValues },
+        'BidAccepted',
+        {
+          _id: bidId,
+          _tokenAddress: erc721TestCollection.address,
+          _tokenId: tokenOne,
+          _bidder: bidder,
+          _seller: holder,
+          _price: price.toString(),
+          _fee: (bidPrice * 0.2).toString()
+        }
+      )
+
+      bidderBalance = await mana.balanceOf(bidder)
+
+      scientificToDecimal(bidderBalance.toString()).should.be.equal(
+        scientificToDecimal(initialBalance.toString() - bidPrice)
+      )
+
+      holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance.toString()).to.be.equal(
+        (bidPrice - bidPrice * 0.2).toString()
+      )
+
+      feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance.toString()).to.be.equal(
+        (bidPrice * 0.1).toString()
+      )
+
+      itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN((bidPrice * 0.1).toString())
+
+      itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance.toString()).to.be.eq.BN((0).toString())
+    })
+
+    it('should share sale :: set fees collector & royalties :: valid beneficiary :: send cut to feesCollector & royaltiesReceiver', async function() {
+      await erc721TestCollection.setCreator(itemCreator)
+      await erc721TestCollection.setBeneficiary(itemBeneficiary)
+
+      let bidderBalance = await mana.balanceOf(bidder)
+      expect(bidderBalance).to.be.eq.BN(initialBalance)
+
+      let holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance).to.be.eq.BN(0)
+
+      let feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance).to.be.eq.BN(0)
+
+      let itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      let itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance).to.be.eq.BN(0)
+
+      // Set 20% of bid price
+      await bidContract.setFeesCollectorCutPerMillion(100000, fromOwner)
+      await bidContract.setRoyaltiesCutPerMillion(100000, fromOwner)
+
+      await bidContract.placeBid(
+        erc721TestCollection.address,
+        tokenTwo,
+        price,
+        twoWeeksInSeconds,
+        fromBidder
+      )
+
+      const bidId = (
+        await bidContract.getBidByToken(
+          erc721TestCollection.address,
+          tokenTwo,
+          0
+        )
+      )[0]
+
+      await erc721TestCollection.safeTransferFromWithBytes(
+        holder,
+        bidContract.address,
+        tokenTwo,
+        bidId,
+        fromHolder
+      )
+
+      const bidPrice = parseInt(price.toString())
+
+      const logs = await getEvents(bidContract, 'BidAccepted')
+      expect(logs.length).to.be.equal(1)
+      assertEvent(
+        { event: logs[0].event, args: logs[0].returnValues },
+        'BidAccepted',
+        {
+          _id: bidId,
+          _tokenAddress: erc721TestCollection.address,
+          _tokenId: tokenTwo,
+          _bidder: bidder,
+          _seller: holder,
+          _price: price.toString(),
+          _fee: (bidPrice * 0.2).toString()
+        }
+      )
+
+      bidderBalance = await mana.balanceOf(bidder)
+
+      scientificToDecimal(bidderBalance.toString()).should.be.equal(
+        scientificToDecimal(initialBalance.toString() - bidPrice)
+      )
+
+      holderBalance = await mana.balanceOf(holder)
+      expect(holderBalance.toString()).to.be.equal(
+        (bidPrice - bidPrice * 0.2).toString()
+      )
+
+      feesCollectorBalance = await mana.balanceOf(feesCollector)
+      expect(feesCollectorBalance.toString()).to.be.equal(
+        (bidPrice * 0.1).toString()
+      )
+
+      itemCreatorBalance = await mana.balanceOf(itemCreator)
+      expect(itemCreatorBalance).to.be.eq.BN(0)
+
+      itemBeneficiaryBalance = await mana.balanceOf(itemBeneficiary)
+      expect(itemBeneficiaryBalance.toString()).to.be.eq.BN(
+        (bidPrice * 0.1).toString()
       )
     })
   })
@@ -1285,11 +2505,9 @@ contract('Bid', function([
         fromBidder
       )
 
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       await bidContract.pause(fromOwner)
 
@@ -1336,11 +2554,9 @@ contract('Bid', function([
         fromBidder
       )
 
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       const functionSignature = web3.eth.abi.encodeFunctionCall(
         {
@@ -1411,11 +2627,9 @@ contract('Bid', function([
     })
 
     it('should remove an expired bid by bidder', async function() {
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       let bidCounter = await bidContract.bidCounterByToken(
         token.address,
@@ -1445,11 +2659,9 @@ contract('Bid', function([
     })
 
     it('should remove an expired bid by bidder :: Relayed EIP721', async function() {
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       let bidCounter = await bidContract.bidCounterByToken(
         token.address,
@@ -1510,11 +2722,9 @@ contract('Bid', function([
     })
 
     it('should remove an expired bid by anyone', async function() {
-      const bidId = (await bidContract.getBidByToken(
-        token.address,
-        tokenOne,
-        0
-      ))[0]
+      const bidId = (
+        await bidContract.getBidByToken(token.address, tokenOne, 0)
+      )[0]
 
       let bidCounter = await bidContract.bidCounterByToken(
         token.address,
@@ -1634,7 +2844,7 @@ contract('Bid', function([
           [anotherBidder],
           fromAnotherBidder
         ),
-        'Bidder has not an active bid for this token'
+        'ERC721Bid#getBidByBidder: BIDDER_HAS_NOT_ACTIVE_BIDS_FOR_TOKEN'
       )
     })
 
@@ -1646,7 +2856,7 @@ contract('Bid', function([
           [bidder],
           fromBidder
         ),
-        'The bid to remove should be expired'
+        'ERC721Bid#_removeExpiredBid: BID_NOT_EXPIRED'
       )
     })
 
@@ -1658,7 +2868,7 @@ contract('Bid', function([
           [bidder],
           fromBidder
         ),
-        'Parameter arrays should have the same length'
+        'ERC721Bid#removeExpiredBids: LENGHT_MISMATCH'
       )
 
       await assertRevert(
@@ -1668,7 +2878,7 @@ contract('Bid', function([
           [bidder],
           fromBidder
         ),
-        'Parameter arrays should have the same length'
+        'ERC721Bid#removeExpiredBids: LENGHT_MISMATCH'
       )
       await assertRevert(
         bidContract.removeExpiredBids(
@@ -1677,7 +2887,7 @@ contract('Bid', function([
           [bidder, anotherBidder],
           fromBidder
         ),
-        'Parameter arrays should have the same length'
+        'ERC721Bid#removeExpiredBids: LENGHT_MISMATCH'
       )
 
       await assertRevert(
@@ -1687,7 +2897,7 @@ contract('Bid', function([
           [bidder],
           fromBidder
         ),
-        'Parameter arrays should have the same length'
+        'ERC721Bid#removeExpiredBids: LENGHT_MISMATCH'
       )
 
       await assertRevert(
@@ -1697,7 +2907,7 @@ contract('Bid', function([
           [bidder, anotherBidder],
           fromBidder
         ),
-        'Parameter arrays should have the same length'
+        'ERC721Bid#removeExpiredBids: LENGHT_MISMATCH'
       )
 
       await assertRevert(
@@ -1707,7 +2917,241 @@ contract('Bid', function([
           [bidder, anotherBidder],
           fromBidder
         ),
-        'Parameter arrays should have the same length'
+        'ERC721Bid#removeExpiredBids: LENGHT_MISMATCH'
+      )
+    })
+  })
+
+  describe('setFeesCollector', function() {
+    it('should change fee collector', async function() {
+      let _feesCollector = await bidContract.feesCollector()
+      expect(_feesCollector).to.be.equal(feesCollector)
+
+      const { logs } = await bidContract.setFeesCollector(holder, {
+        from: owner
+      })
+
+      _feesCollector = await bidContract.feesCollector()
+      expect(_feesCollector).to.be.equal(holder)
+
+      logs.length.should.be.equal(1)
+      expect(logs.length).to.be.equal(1)
+      assertEvent(logs[0], 'FeesCollectorSet', {
+        _oldFeesCollector: feesCollector,
+        _newFeesCollector: holder
+      })
+
+      await bidContract.setFeesCollector(feesCollector, {
+        from: owner
+      })
+
+      _feesCollector = await bidContract.feesCollector()
+      expect(_feesCollector).to.be.equal(feesCollector)
+    })
+
+    it('should change fee collector :: Relayed EIP721', async function() {
+      let _feesCollector = await bidContract.feesCollector()
+      expect(_feesCollector).to.be.equal(feesCollector)
+
+      const functionSignature = web3.eth.abi.encodeFunctionCall(
+        {
+          inputs: [
+            {
+              internalType: 'address',
+              name: '_feesCollector',
+              type: 'address'
+            }
+          ],
+          name: 'setFeesCollector',
+          outputs: [],
+          stateMutability: 'nonpayable',
+          type: 'function'
+        },
+        [holder]
+      )
+
+      const { logs } = await sendMetaTx(
+        bidContract,
+        functionSignature,
+        owner,
+        relayer,
+        null,
+        domain,
+        version
+      )
+
+      logs.length.should.be.equal(2)
+      logs.shift()
+
+      _feesCollector = await bidContract.feesCollector()
+      expect(_feesCollector).to.be.equal(holder)
+
+      assertEvent(logs[0], 'FeesCollectorSet', {
+        _oldFeesCollector: feesCollector,
+        _newFeesCollector: holder
+      })
+    })
+
+    it('should fail to change fee collector address zero', async function() {
+      await assertRevert(
+        bidContract.setFeesCollector(zeroAddress, { from: owner }),
+        'ERC721Bid#setFeesCollector: INVALID_FEES_COLLECTOR'
+      )
+    })
+
+    it('should fail to change fee collector (not owner)', async function() {
+      await assertRevert(
+        bidContract.setFeesCollector(holder, { from: holder }),
+        'Ownable: caller is not the owner'
+      )
+    })
+
+    it('should fail to change fee collector (not owner) :: Relayed EIP721', async function() {
+      const functionSignature = web3.eth.abi.encodeFunctionCall(
+        {
+          inputs: [
+            {
+              internalType: 'address',
+              name: '_feesCollector',
+              type: 'address'
+            }
+          ],
+          name: 'setFeesCollector',
+          outputs: [],
+          stateMutability: 'nonpayable',
+          type: 'function'
+        },
+        [holder]
+      )
+
+      await assertRevert(
+        sendMetaTx(
+          bidContract,
+          functionSignature,
+          holder,
+          relayer,
+          null,
+          domain,
+          version
+        )
+      )
+    })
+  })
+
+  describe('setRoyaltiesManager', function() {
+    it('should change royalties manager', async function() {
+      let _royaltiesManager = await bidContract.royaltiesManager()
+      expect(_royaltiesManager).to.be.equal(royaltiesManager.address)
+
+      const { logs } = await bidContract.setRoyaltiesManager(token.address, {
+        from: owner
+      })
+
+      _royaltiesManager = await bidContract.royaltiesManager()
+      expect(_royaltiesManager).to.be.equal(token.address)
+
+      logs.length.should.be.equal(1)
+      expect(logs.length).to.be.equal(1)
+      assertEvent(logs[0], 'RoyaltiesManagerSet', {
+        _oldRoyaltiesManager: royaltiesManager.address,
+        _newRoyaltiesManager: token.address
+      })
+
+      await bidContract.setRoyaltiesManager(royaltiesManager.address, {
+        from: owner
+      })
+
+      _royaltiesManager = await bidContract.royaltiesManager()
+      expect(_royaltiesManager).to.be.equal(royaltiesManager.address)
+    })
+
+    it('should change royalties manager :: Relayed EIP721', async function() {
+      let _royaltiesManager = await bidContract.royaltiesManager()
+      expect(_royaltiesManager).to.be.equal(royaltiesManager.address)
+
+      const functionSignature = web3.eth.abi.encodeFunctionCall(
+        {
+          inputs: [
+            {
+              internalType: 'address',
+              name: '_royaltiesManager',
+              type: 'address'
+            }
+          ],
+          name: 'setRoyaltiesManager',
+          outputs: [],
+          stateMutability: 'nonpayable',
+          type: 'function'
+        },
+        [token.address]
+      )
+
+      const { logs } = await sendMetaTx(
+        bidContract,
+        functionSignature,
+        owner,
+        relayer,
+        null,
+        domain,
+        version
+      )
+
+      logs.length.should.be.equal(2)
+      logs.shift()
+
+      _royaltiesManager = await bidContract.royaltiesManager()
+      expect(_royaltiesManager).to.be.equal(token.address)
+
+      logs.length.should.be.equal(1)
+      expect(logs.length).to.be.equal(1)
+      assertEvent(logs[0], 'RoyaltiesManagerSet', {
+        _oldRoyaltiesManager: royaltiesManager.address,
+        _newRoyaltiesManager: token.address
+      })
+    })
+
+    it('should fail to change royalties manager address zero', async function() {
+      await assertRevert(
+        bidContract.setRoyaltiesManager(zeroAddress, { from: owner }),
+        'ERC721Bid#setRoyaltiesManager: INVALID_ROYALTIES_MANAGER'
+      )
+    })
+
+    it('should fail to change royalties manager (not owner)', async function() {
+      await assertRevert(
+        bidContract.setRoyaltiesManager(token.address, { from: holder }),
+        'Ownable: caller is not the owner'
+      )
+    })
+
+    it('should fail to change royalties manager (not owner) :: Relayed EIP721', async function() {
+      const functionSignature = web3.eth.abi.encodeFunctionCall(
+        {
+          inputs: [
+            {
+              internalType: 'address',
+              name: '_royaltiesManager',
+              type: 'address'
+            }
+          ],
+          name: 'setRoyaltiesManager',
+          outputs: [],
+          stateMutability: 'nonpayable',
+          type: 'function'
+        },
+        [token.address]
+      )
+
+      await assertRevert(
+        sendMetaTx(
+          bidContract,
+          functionSignature,
+          holder,
+          relayer,
+          null,
+          domain,
+          version
+        )
       )
     })
   })
@@ -1717,7 +3161,7 @@ contract('Bid', function([
       console.log('----- Place bids for tokenOne & tokenTwo -----')
       await assertRevert(
         bidContract.getBidByBidder(token.address, tokenOne, anotherBidder),
-        'Invalid index'
+        'ERC721Bid#_getBid: INVALID_INDEX'
       )
 
       await placeMultipleBidsAndCheck(
@@ -1754,7 +3198,7 @@ contract('Bid', function([
 
       await assertRevert(
         bidContract.getBidByBidder(token.address, tokenOne, bidder),
-        'Bidder has not an active bid for this token'
+        'ERC721Bid#getBidByBidder: BIDDER_HAS_NOT_ACTIVE_BIDS_FOR_TOKEN'
       )
 
       let bid = await bidContract.getBidByBidder(
@@ -1790,7 +3234,7 @@ contract('Bid', function([
       expect(bidCounter).to.be.eq.BN(0)
       await assertRevert(
         bidContract.getBidByToken(token.address, tokenOne, 0),
-        'Invalid index'
+        'ERC721Bid#_getBid: INVALID_INDEX'
       )
 
       console.log('----- Cancel second tokenTwo bid -----')
@@ -1822,7 +3266,7 @@ contract('Bid', function([
       expect(bidCounter).to.be.eq.BN(0)
       await assertRevert(
         bidContract.getBidByToken(token.address, tokenTwo, 0),
-        'Invalid index'
+        'ERC721Bid#_getBid: INVALID_INDEX'
       )
 
       console.log('----- Return tokenOne to holder -----')
@@ -1890,12 +3334,12 @@ contract('Bid', function([
 
       await assertRevert(
         bidContract.getBidByBidder(token.address, tokenOne, bidder),
-        'Bidder has not an active bid for this token'
+        'ERC721Bid#getBidByBidder: BIDDER_HAS_NOT_ACTIVE_BIDS_FOR_TOKEN'
       )
 
       await assertRevert(
         bidContract.getBidByBidder(token.address, tokenOne, anotherBidder),
-        'Bidder has not an active bid for this token'
+        'ERC721Bid#getBidByBidder: BIDDER_HAS_NOT_ACTIVE_BIDS_FOR_TOKEN'
       )
 
       bid = await bidContract.getBidByBidder(
@@ -1945,12 +3389,12 @@ contract('Bid', function([
 
       await assertRevert(
         bidContract.getBidByBidder(token.address, tokenOne, bidder),
-        'Bidder has not an active bid for this token'
+        'ERC721Bid#getBidByBidder: BIDDER_HAS_NOT_ACTIVE_BIDS_FOR_TOKEN'
       )
 
       await assertRevert(
         bidContract.getBidByBidder(token.address, tokenOne, oneMoreBidder),
-        'Bidder has not an active bid for this token'
+        'ERC721Bid#getBidByBidder: BIDDER_HAS_NOT_ACTIVE_BIDS_FOR_TOKEN'
       )
 
       bid = await bidContract.getBidByBidder(
